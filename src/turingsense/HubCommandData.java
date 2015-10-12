@@ -1,6 +1,8 @@
 package turingsense;
 
 import java.io.DataOutputStream;
+import java.io.PrintStream;
+import java.sql.Timestamp;
 
 /*
  * This class correspond to the cloud_to_hub_t c struct.
@@ -28,6 +30,9 @@ public class HubCommandData {
 	public static final int WIFI_VALID_DATA		= (1 << 30);
 
 	private DataOutputStream	outStream;
+	private int					logLevel	= 2;		
+	private PrintStream			log			= null;
+
 	// variables for sending the command to the hub 
 	private int				command;
 	private int				rtc_value;
@@ -48,11 +53,19 @@ public class HubCommandData {
 	public HubCommandData( DataOutputStream p_outStream, int p_command, String[] p_satellites ) {
 		
 		this( p_outStream, p_command);
+		num_of_sat = p_satellites.length;
 		if ( wifiIsSetSAT( p_command ) ) {
 			for (byte i=0; i < p_satellites.length; i++ ) {
 				satellite_ids[i] = Integer.parseInt(p_satellites[i]);
 			}
 		}
+	}
+	
+	public HubCommandData( DataOutputStream p_outStream, int p_command, String[] p_satellites, int p_logLevel, PrintStream p_log ) {
+		
+		this( p_outStream, p_command, p_satellites);
+		logLevel = p_logLevel;
+		log = p_log;
 	}
 	
 	/*
@@ -70,6 +83,21 @@ public class HubCommandData {
 		return true;
 	}
 
+	/*
+	 * Send data to the hub
+	 */
+	public boolean send() {
+
+		if (logLevel >= 1 & log != null) {
+			log.println("	sending command: " + Integer.toBinaryString( command ));
+			log.println("	            rtc: " + Integer.toHexString( rtc_value ));
+			log.println("	     num_of_sat: " + Integer.toString( num_of_sat ));
+		}
+
+		//outStream.
+		return true;
+	}
+	
 	/*
 	 * Methods for setting correct command
 	 */

@@ -167,7 +167,8 @@ public class HubControl {
 				( b_set_rtc ? HubCommandData.WIFI_SET_RTC : HubCommandData.WIFI_VOID ) |
 				( b_set_satellites ? HubCommandData.WIFI_SET_SATELLITES : HubCommandData.WIFI_VOID ),
 				aSatList);
-		return true;
+		
+		return command.send();
 	}
 	
 	public boolean startRecording () {
@@ -175,7 +176,8 @@ public class HubControl {
 				outStream,
 				HubCommandData.WIFI_ACTIVE | 
 				HubCommandData.WIFI_SEND );
-		return true;
+		
+		return command.send();
 	}
 	
 	private boolean openLogFile () {
