@@ -42,10 +42,11 @@ public class HubControl {
 	private ConcurrentLinkedQueue<byte[]>	queue		= null;	// queue where to put readed frames
 	private Properties						prop		= null; // command line properties
 	/* Main properties:
-	 * HUB_IP		string
-	 * HUB_PORT		int
-	 * LOG_LEVEL	int 	possible value 0:NONE, 1:ERR, 2:WARN 3:ALL
-	 * LOG_FILE 	string
+	 * HUB_IP			string
+	 * HUB_PORT			int
+	 * LOG_LEVEL		int 	possible value 0:NONE, 1:ERR, 2:WARN 3:ALL
+	 * LOG_FILE 		string
+	 * SATELLITES_LIST	string	list values separated by comma (,)
 	 */
 	private int								logLevel	= 2;
 	private PrintStream						log			= null;
@@ -157,8 +158,24 @@ public class HubControl {
 		return true;
 	}
 
-	public boolean startRecording () {
+	public boolean activate ( boolean b_set_rtc, boolean b_set_satellites ) {
+		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+		HubCommandData	command = new HubCommandData (
+				outStream,
+				HubCommandData.WIFI_NOT_ACTIVE | 
+				HubCommandData.WIFI_SEND |
+				( b_set_rtc ? HubCommandData.WIFI_SET_RTC : HubCommandData.WIFI_VOID ) |
+				( b_set_satellites ? HubCommandData.WIFI_SET_SATELLITES : HubCommandData.WIFI_VOID ),
+				aSatList);
+		return true;
+	}
 	
+	public boolean startRecording () {
+		HubCommandData	command = new HubCommandData (	
+				outStream,
+				HubCommandData.WIFI_ACTIVE | 
+				HubCommandData.WIFI_SEND );
+		return true;
 	}
 	
 	private boolean openLogFile () {
@@ -178,6 +195,8 @@ public class HubControl {
 			
 			log = new PrintStream( new FileOutputStream( fileName, true /* append */ ));
 
+	       	if (logLevel >= 1 & log != null) log.println("Changed log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
+
 		} catch (FileNotFoundException e) {
 			System.err.println("Error in opening propertis file: file not found!");
             System.exit(1);
@@ -190,6 +209,7 @@ public class HubControl {
 	private boolean closeLogFile () {
 
 		if (log != null) { 
+	       	if (logLevel >= 1 & log != null) log.println("Change log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
 			log.close();
 			log = null;
 		}
@@ -245,10 +265,8 @@ public class HubControl {
 				hubCtrl.disconnect();
 				break;
 			case '7': // Change log file
-		       	if (logLevel >= 1 & log != null) log.println("Change log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
 				hubCtrl.closeLogFile();
 				hubCtrl.openLogFile();
-		       	if (logLevel >= 1 & log != null) log.println("Changed log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
 				break;
 			case 'q': // quit
 				break;
