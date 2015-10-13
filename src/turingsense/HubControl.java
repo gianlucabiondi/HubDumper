@@ -240,10 +240,10 @@ public class HubControl {
 		
 		System.out.println(
 				"Enter : 1 - Connect\n" +
-				"      : 2 - Start Recording\n" +
-				"      : 3 - Activate Sensors\n" +
-				"      : 4 - Deactivate Sensors\n" +
-				"      : 5 - Stop Recording\n" +
+				"      : 2 - Init Sensors (declare sensors & init RTC)\n" +
+				"      : 3 - Start Recording\n" +
+				"      : 4 - Stop Recording\n" +
+				"      : 5 - Deactivate Sensors (NO ACTIVE & NO SENDING)\n" +
 				"      : 6 - Disconnect\n" +
 				"      : 7 - Change Log File\n" +
 				"      : q - Quit\n"
@@ -254,14 +254,16 @@ public class HubControl {
 			case '1': // connect
 				hubCtrl.connect();
 				break;
-			case '2': // Start Recording
+			case '2': // Activate Sensors
+				hubCtrl.activate(true, true);
+				break;
+			case '3': // Start Recording
 				hubCtrl.startRecording();
 				break;
-			case '3': // Activate Sensors
+			case '4': // Stop Recording
+				//hubCtrl.stopRecording();
 				break;
-			case '4': // Deactivate Sensors
-				break;
-			case '5': // Stop Recording
+			case '5': // Deactivate Sensors
 				break;
 			case '6': // Disconnect
 				hubCtrl.disconnect();
