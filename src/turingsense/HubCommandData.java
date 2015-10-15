@@ -1,8 +1,10 @@
 package turingsense;
 
-import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
-import java.sql.Timestamp;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 /*
  * This class correspond to the cloud_to_hub_t c struct.
@@ -29,7 +31,7 @@ public class HubCommandData {
 	public static final int WIFI_SET_SATELLITES	= (1 << 6);		// set num satellites
 	public static final int WIFI_VALID_DATA		= (1 << 30);
 
-	private DataOutputStream	outStream;
+	private OutputStream		outStream;
 	private int					logLevel	= 2;		
 	private PrintStream			log			= null;
 
@@ -43,14 +45,14 @@ public class HubCommandData {
 	/*
 	 * Contructors
 	 */
-	public HubCommandData( DataOutputStream p_outStream, int p_command ) {
+	public HubCommandData( OutputStream p_outStream, int p_command ) {
 		outStream	= p_outStream;
 		command		= p_command;
 		rtc_value	= 0;
 		satellite_ids = new int[MAX_SAT_SENSORS];
 	}
 	
-	public HubCommandData( DataOutputStream p_outStream, int p_command, String[] p_satellites ) {
+	public HubCommandData( OutputStream p_outStream, int p_command, String[] p_satellites ) {
 		
 		this( p_outStream, p_command);
 		num_of_sat = p_satellites.length;
@@ -61,7 +63,7 @@ public class HubCommandData {
 		}
 	}
 	
-	public HubCommandData( DataOutputStream p_outStream, int p_command, String[] p_satellites, int p_logLevel, PrintStream p_log ) {
+	public HubCommandData( OutputStream p_outStream, int p_command, String[] p_satellites, int p_logLevel, PrintStream p_log ) {
 		
 		this( p_outStream, p_command, p_satellites);
 		logLevel = p_logLevel;
@@ -92,9 +94,19 @@ public class HubCommandData {
 			log.println("	sending command: " + Integer.toBinaryString( command ));
 			log.println("	            rtc: " + Integer.toHexString( rtc_value ));
 			log.println("	     num_of_sat: " + Integer.toString( num_of_sat ));
+			log.println("	     satellites: " + Arrays.toString( satellite_ids ));
 		}
 
-		//outStream.
+		try {
+			byte[] cmd = commandToBytes();
+			System.out.println( Arrays.toString( cmd ) );
+			outStream.write( cmd );
+			outStream.flush();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
 		return true;
 	}
 	
@@ -117,4 +129,35 @@ public class HubCommandData {
 	public int wifiCmdSetSAT ( int p_cmd )			{ return (p_cmd | WIFI_SET_SATELLITES); }
 	public int wifiCmdClearSAT ( int p_cmd )		{ return (p_cmd & ~WIFI_SET_SATELLITES); }
 
+	/*
+	 * Methods for transforming this command into byte[]
+	 */
+	byte[] commandToBytes()
+	{
+	  byte[] result = new byte[THIS_STRUCT_SIZE];
+
+	  result[ 0] = (byte) (command >> 24);
+	  result[ 1] = (byte) (command >> 16);
+	  result[ 2] = (byte) (command >> 8);
+	  result[ 3] = (byte) (command /*>> 0*/);
+
+	  result[ 4] = (byte) (rtc_value >> 24);
+	  result[ 5] = (byte) (rtc_value >> 16);
+	  result[ 6] = (byte) (rtc_value >> 8);
+	  result[ 7] = (byte) (rtc_value /*>> 0*/);
+
+	  result[ 8] = (byte) (num_of_sat >> 24);
+	  result[ 9] = (byte) (num_of_sat >> 16);
+	  result[10] = (byte) (num_of_sat >> 8);
+	  result[11] = (byte) (num_of_sat /*>> 0*/);
+
+	  for (int i = 0; i< num_of_sat; i++) {
+		  result[12+0+(i*4)] = (byte) (satellite_ids[i] >> 24);
+		  result[12+1+(i*4)] = (byte) (satellite_ids[i] >> 16);
+		  result[12+2+(i*4)] = (byte) (satellite_ids[i] >> 8);
+		  result[12+3+(i*4)] = (byte) (satellite_ids[i] /*>> 0*/);
+	  }
+
+	  return result;
+	}
 }

@@ -17,7 +17,7 @@
 package turingsense;
 
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
+import java.io.OutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -36,11 +36,12 @@ public class HubControl {
 	/*
 	 * local variables
 	 */
-	private Socket							hubSocket	= null; // socket to the hub
-	private DataInputStream					inStream	= null;	// input stream coming from the hub
-	private DataOutputStream				outStream	= null;	// output stream coming from the hub
-	private ConcurrentLinkedQueue<byte[]>	queue		= null;	// queue where to put readed frames
-	private Properties						prop		= null; // command line properties
+	private Socket							hubSocket		= null; // socket to the hub
+	private DataInputStream					inStream		= null;	// input stream coming from the hub
+	private OutputStream					outStream		= null;	// output stream coming from the hub
+	private ConcurrentLinkedQueue<byte[]>	queue			= null;	// queue where to put readed frames
+	private Properties						prop			= null; // command line properties
+	private HubReader 						readerThread	= null; // reader class
 	/* Main properties:
 	 * HUB_IP			string
 	 * HUB_PORT			int
@@ -48,15 +49,15 @@ public class HubControl {
 	 * LOG_FILE 		string
 	 * SATELLITES_LIST	string	list values separated by comma (,)
 	 */
-	private int								logLevel	= 2;
-	private PrintStream						log			= null;
+	private int								logLevel		= 2;
+	private PrintStream						log				= null;
 
 	/*
 	 * Constructor:
 	 */
-	public HubControl() {
-		// TODO Auto-generated constructor stub 
-	}
+//	public HubControl() {
+//		// TODO Auto-generated constructor stub 
+//	}
 
 	/*
 	 * Methods:
@@ -121,11 +122,11 @@ public class HubControl {
         	hubSocket = new Socket( hostName, portNumber );
         	if (logLevel >= 3 & log != null) log.println("	Connected succefsully to " + hostName + ":" + portNumber);
         	
-        	hubSocket.setSoTimeout(1);
-        	if (logLevel >= 3 & log != null) log.println("	Set SO_TIMEOUT to 1ms");
+        	hubSocket.setSoTimeout(0);
+        	if (logLevel >= 3 & log != null) log.println("	Set SO_TIMEOUT to 0ms");
         	
         	inStream  = new DataInputStream( hubSocket.getInputStream());
-        	outStream = new DataOutputStream( hubSocket.getOutputStream());
+        	outStream = hubSocket.getOutputStream();
 
         } catch (UnknownHostException e) {
         	if (logLevel >= 1 & log != null) log.println("Host ? " + hostName);
@@ -158,7 +159,7 @@ public class HubControl {
 		return true;
 	}
 
-	public boolean activate ( boolean b_set_rtc, boolean b_set_satellites ) {
+	public boolean initSensors ( boolean b_set_rtc, boolean b_set_satellites ) {
 		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
 		HubCommandData	command = new HubCommandData (
 				outStream,
@@ -166,7 +167,9 @@ public class HubControl {
 				HubCommandData.WIFI_SEND |
 				( b_set_rtc ? HubCommandData.WIFI_SET_RTC : HubCommandData.WIFI_VOID ) |
 				( b_set_satellites ? HubCommandData.WIFI_SET_SATELLITES : HubCommandData.WIFI_VOID ),
-				aSatList);
+				aSatList,
+				logLevel,
+				log );
 		
 		return command.send();
 	}
@@ -175,7 +178,33 @@ public class HubControl {
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_ACTIVE | 
-				HubCommandData.WIFI_SEND );
+				HubCommandData.WIFI_SEND,
+				new String[0],
+				logLevel,
+				log );
+		
+		if ( ! command.send() ) {
+			return false;
+		};
+		
+		// start new thread to read from the hub
+		queue = new ConcurrentLinkedQueue<byte[]>();
+		readerThread = new HubReader( inStream, queue, log );
+		readerThread.setUseMagnetometer((prop.getProperty("MAGNETOMETER").equals("YES") ) ? true : false );
+		readerThread.start();
+		
+		return true;
+		
+	}
+	
+	public boolean stopRecording () {
+		HubCommandData	command = new HubCommandData (	
+				outStream,
+				HubCommandData.WIFI_NOT_ACTIVE | 
+				HubCommandData.WIFI_SEND,
+				new String[0],
+				logLevel,
+				log );
 		
 		return command.send();
 	}
@@ -237,13 +266,14 @@ public class HubControl {
             System.exit(1);
 		}
 		hubCtrl.init(args[0]);
-		
+		//System.out.print((prop.getProperty("MAGNETOMETER") == "YES")?"YES":"NO");
+
 		System.out.println(
 				"Enter : 1 - Connect\n" +
 				"      : 2 - Init Sensors (declare sensors & init RTC)\n" +
 				"      : 3 - Start Recording\n" +
 				"      : 4 - Stop Recording\n" +
-				"      : 5 - Deactivate Sensors (NO ACTIVE & NO SENDING)\n" +
+				"      : 5 - Deactivate Sensors (NO ACTIVE & SENDING)\n" +
 				"      : 6 - Disconnect\n" +
 				"      : 7 - Change Log File\n" +
 				"      : q - Quit\n"
@@ -254,16 +284,17 @@ public class HubControl {
 			case '1': // connect
 				hubCtrl.connect();
 				break;
-			case '2': // Activate Sensors
-				hubCtrl.activate(true, true);
+			case '2': // Init Sensors (declare sensors & init RTC)
+				hubCtrl.initSensors(true, true);
 				break;
 			case '3': // Start Recording
 				hubCtrl.startRecording();
 				break;
 			case '4': // Stop Recording
-				//hubCtrl.stopRecording();
+				hubCtrl.stopRecording();
 				break;
-			case '5': // Deactivate Sensors
+			case '5': // Deactivate Sensors (NO ACTIVE & SENDING)
+				hubCtrl.initSensors(false, false);
 				break;
 			case '6': // Disconnect
 				hubCtrl.disconnect();

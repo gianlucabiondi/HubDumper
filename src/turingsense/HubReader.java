@@ -47,8 +47,7 @@ public class HubReader extends Thread {
 	}
 	public HubReader( DataInputStream p_in, ConcurrentLinkedQueue<byte[]> p_que, PrintStream p_log ) {
 
-		this.inStream	= p_in;
-		this.queue 		= p_que;
+		this( p_in, p_que );
 		this.log		= p_log;
 	}
 

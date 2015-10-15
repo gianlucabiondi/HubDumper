@@ -5,5 +5,6 @@
 	<entry key="HUB_PORT">1234</entry>
 	<entry key="LOG_LEVEL">3</entry>
 	<entry key="LOG_FILE">C:\Users\gianluca\workspace\HubDumper\execution.log</entry>
-	<entry key="SATELLITES_LIST">20, 4</entry>
+	<entry key="SATELLITES_LIST">4</entry>
+	<entry key="MAGNETOMETER">YES</entry>
 </properties>
