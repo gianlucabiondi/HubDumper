@@ -1,0 +1,68 @@
+MAG is enabled!
+bytes read from hub: 456
+bytes sent to hub: 52
+bytes per data_to_wifi_t: 456
+bytes per payload_to_wifi_t: 40
+bytes per sensor_record_t: 36
+Printing on C:\TuringSense\cSocket\clientDir\log\logdata_2015_10_17_11_50_24.txt
+There are 1 satellites!
+Satellite 0 : 21!
+Connected to 192.168.0.117 port 1234
+Current state: 0x8 
+Enter:   0  (for not active, not sending)
+         1  (for active, not sending)
+         2  (for active, sending)
+         3  (for not active, sending (TO DRAIN))
+         4  (for set RTC to 0, not active, sending (TO DRAIN))
+         5  (print cbuf & timestamp status)
+         6  (print my RTC)
+         q  (to quit)
+at anytime...
+4
+
+ Setting RTC to 0.  NOT_ACTIVE, SENDING
+
+ RTC = 0xd26ac02d
+
+ new_state = 0x60
+command sent: [96,0,0,0,0,0,0,0,1,0,0,0,21,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]
+2
+
+Unknown options!
+Unknown options!
+ Setting state to ACTIVE, SENDING
+
+ new_state = 0x2
+
+ RTC = 0xd26b0653
+command sent: [2,0,0,0,0,0,0,0,1,0,0,0,21,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]
+    50 100.0 
+   100 100.0 
+   150 100.0 
+   200 100.0 
+   250 100.0 
+   300 100.0 
+   350 100.0 3
+
+Unknown options!
+Unknown options!
+ Setting state to NOT ACTIVE, SENDING
+
+ RTC = 0xd26b1ded
+command sent: [0,0,0,0,0,0,0,0,1,0,0,0,21,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]
+   400 100.0 
+   450 100.0 
+   500 100.0 
+   550 100.0 
+   600 100.0 0
+
+Unknown options!
+Unknown options!
+ Setting state to NOT_ACTIVE, NOT_SENDING
+command sent: [8,0,0,0,0,0,0,0,1,0,0,0,21,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]
+q
+
+Unknown options!
+Unknown options!
+You hit q. Exiting...
+received total = 605

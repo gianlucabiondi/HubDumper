@@ -175,11 +175,12 @@ public class HubControl {
 	}
 	
 	public boolean startRecording () {
+		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_ACTIVE | 
 				HubCommandData.WIFI_SEND,
-				new String[0],
+				aSatList,
 				logLevel,
 				log );
 		
@@ -198,11 +199,12 @@ public class HubControl {
 	}
 	
 	public boolean stopRecording () {
+		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_NOT_ACTIVE | 
 				HubCommandData.WIFI_SEND,
-				new String[0],
+				aSatList,
 				logLevel,
 				log );
 		

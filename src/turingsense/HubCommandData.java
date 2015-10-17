@@ -3,7 +3,7 @@ package turingsense;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
-import java.nio.ByteBuffer;
+//import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /*
@@ -56,10 +56,8 @@ public class HubCommandData {
 		
 		this( p_outStream, p_command);
 		num_of_sat = p_satellites.length;
-		if ( wifiIsSetSAT( p_command ) ) {
-			for (byte i=0; i < p_satellites.length; i++ ) {
-				satellite_ids[i] = Integer.parseInt(p_satellites[i]);
-			}
+		for (byte i=0; i < p_satellites.length; i++ ) {
+			satellite_ids[i] = Integer.parseInt(p_satellites[i]);
 		}
 	}
 	
@@ -136,26 +134,26 @@ public class HubCommandData {
 	{
 	  byte[] result = new byte[THIS_STRUCT_SIZE];
 
-	  result[ 0] = (byte) (command >> 24);
-	  result[ 1] = (byte) (command >> 16);
-	  result[ 2] = (byte) (command >> 8);
-	  result[ 3] = (byte) (command /*>> 0*/);
+	  result[ 0] = (byte) (command /*>> 0*/);
+	  result[ 1] = (byte) (command >> 8);
+	  result[ 2] = (byte) (command >> 16);
+	  result[ 3] = (byte) (command >> 24);
 
-	  result[ 4] = (byte) (rtc_value >> 24);
-	  result[ 5] = (byte) (rtc_value >> 16);
-	  result[ 6] = (byte) (rtc_value >> 8);
-	  result[ 7] = (byte) (rtc_value /*>> 0*/);
+	  result[ 4] = (byte) (rtc_value /*>> 0*/);
+	  result[ 5] = (byte) (rtc_value >> 8);
+	  result[ 6] = (byte) (rtc_value >> 16);
+	  result[ 7] = (byte) (rtc_value >> 24);
 
-	  result[ 8] = (byte) (num_of_sat >> 24);
-	  result[ 9] = (byte) (num_of_sat >> 16);
-	  result[10] = (byte) (num_of_sat >> 8);
-	  result[11] = (byte) (num_of_sat /*>> 0*/);
+	  result[ 8] = (byte) (num_of_sat /*>> 0*/);
+	  result[ 9] = (byte) (num_of_sat >> 8);
+	  result[10] = (byte) (num_of_sat >> 16);
+	  result[11] = (byte) (num_of_sat >> 24);
 
 	  for (int i = 0; i< num_of_sat; i++) {
-		  result[12+0+(i*4)] = (byte) (satellite_ids[i] >> 24);
-		  result[12+1+(i*4)] = (byte) (satellite_ids[i] >> 16);
-		  result[12+2+(i*4)] = (byte) (satellite_ids[i] >> 8);
-		  result[12+3+(i*4)] = (byte) (satellite_ids[i] /*>> 0*/);
+		  result[12+0+(i*4)] = (byte) (satellite_ids[i] /*>> 0*/);
+		  result[12+1+(i*4)] = (byte) (satellite_ids[i] >> 8);
+		  result[12+2+(i*4)] = (byte) (satellite_ids[i] >> 16);
+		  result[12+3+(i*4)] = (byte) (satellite_ids[i] >> 24);
 	  }
 
 	  return result;

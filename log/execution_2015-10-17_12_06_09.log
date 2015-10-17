@@ -1,0 +1,15 @@
+Changed log file 2015-10-17 12:06:09.933
+
+Start application 2015-10-17 12:06:09.933
+	Trying to connect to 192.168.0.117:1234
+	Connected succefsully to 192.168.0.117:1234
+	Set SO_TIMEOUT to 0ms
+	sending command: 1100000
+	            rtc: 0
+	     num_of_sat: 1
+	     satellites: [4, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+	Disconnected from hub
+Close application 2015-10-17 12:08:51.707
+
+Change log file 2015-10-17 12:08:51.707
+
