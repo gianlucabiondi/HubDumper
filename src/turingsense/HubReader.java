@@ -12,7 +12,7 @@ import java.util.Arrays;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.PrintStream;
+//import java.io.PrintStream;
 
 /**
  * @author gianluca
@@ -33,8 +33,9 @@ public class HubReader extends Thread {
 	private ConcurrentLinkedQueue<byte[]>	queue		= null;	// queue where to put readed frames
 	//private boolean							bUseMag		= false;// false -> NOT read mag data
 																// true -> read mag data
-	private int								nFrameSize	= SensorData.BYTES_READ_FROM_HUB_NOMAG;
-	private PrintStream						log			= null;
+	private int								nFrameSize	= SensorData.BYTES_READ_FROM_HUB_DEFAULT;
+	private Log								log			= null;
+	private boolean							stopWorking	= false; // when set to FALSE -> the thread stops
 	
 
 	/*
@@ -45,12 +46,19 @@ public class HubReader extends Thread {
 		this.inStream	= p_in;
 		this.queue 		= p_que;
 	}
-	public HubReader( DataInputStream p_in, ConcurrentLinkedQueue<byte[]> p_que, PrintStream p_log ) {
+	public HubReader( DataInputStream p_in, ConcurrentLinkedQueue<byte[]> p_que, Log p_log ) {
 
 		this( p_in, p_que );
 		this.log		= p_log;
 	}
 
+	/**
+	 * stop the thread.
+	 */
+	public void stopReading() {
+		stopWorking = true;
+	}
+	
 	/*
 	 * Execution method. Here the class start reading from the hub.
 	 * 
@@ -58,32 +66,66 @@ public class HubReader extends Thread {
 	@Override
     public void run() {
 		
-		int nBytesRead;
-		int nNumFrames = 0;
-		
+		int		nBytesRead;
+		int		nNumFrames = 0;
+    	byte[]	bFrame = new byte[ nFrameSize ];
+    	long	startRead, lenghtRead, maxRead = 0, minRead = Long.MAX_VALUE, sumRead = 0;
+
+		if (log != null) log.write( Log.INFORMATION, "Reader Thread: going to read " + nFrameSize + " bytes per frame" );
+
         // main loop for reading frames from the hub
 		try {
 			
+			startRead = System.currentTimeMillis();
+			
 			// wait until a frame is available
-	    	byte[] bFrame = new byte[ nFrameSize ];
-	        while ((nBytesRead = inStream.read(bFrame, 0, nFrameSize)) > 0) {
-
-	        	if (log != null) log.println( "Bytes read: " + nBytesRead);
+	        while (!stopWorking & (nBytesRead = inStream.read(bFrame, 0, nFrameSize)) >= 0) {
+	        	
+	        	// performance calc
+	        	lenghtRead = System.currentTimeMillis() - startRead;
+	        	sumRead += lenghtRead;
+	        	if (lenghtRead > maxRead) maxRead = lenghtRead;
+	        	if (lenghtRead < minRead) minRead = lenghtRead;
 	        	
 	        	// count num of frames
 	        	nNumFrames++;
 	        	
+	        	if (log != null) log.write( Log.INFORMATION, "Reader Thread: frame " + nNumFrames + " - bytes read: " + nBytesRead + " in " + lenghtRead + "ms" );
+		        	
 	        	// put every frame into the queue
 	        	queue.add( bFrame );
 	        	
 	        	// re-init the array
 	        	Arrays.fill( bFrame, (byte)0 );
 	        	
+	        	// re-start the clock
+				startRead = System.currentTimeMillis();
+
 	        }
-	        if (log != null) log.println( "Read " + nNumFrames + " frames" );
+        	// manage EOF: exit thread
+    		//inStream.close();
+    		if (nBytesRead < 0) {  // EOF
+        		if (log != null) log.write( Log.INFORMATION, "Reader Thread: EOF found!" );
+    		}
+    		if (stopWorking) {  // stop requested
+        		if (log != null) log.write( Log.INFORMATION, "Reader Thread: Someone has requested the thread to stop!" );
+    		}
+        	if (log != null) log.write( Log.INFORMATION, "Reader Thread: Read " + nNumFrames + " frames" );
 	        
-		} catch (IOException e) { e.printStackTrace(); }
-	
+		} catch (IOException e) { 
+
+			e.printStackTrace();
+			if (log != null) log.write( Log.INFORMATION, "Reader Thread: IO Exception!" );
+ 
+		}
+		
+		if (log != null) log.write( Log.INFORMATION, "Reader Thread: closing ..." );
+		if (nNumFrames > 0) {
+			if (log != null) log.write( Log.INFORMATION, "Reader Thread: max READ length " + maxRead );
+			if (log != null) log.write( Log.INFORMATION, "Reader Thread: min READ length " + minRead );
+			if (log != null) log.write( Log.INFORMATION, "Reader Thread: avg READ length " + (sumRead / nNumFrames) );
+		}
+		
 	}
 
 	/*

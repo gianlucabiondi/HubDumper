@@ -1,6 +1,0 @@
-Changed log file 2015-10-13 23:00:31.734
-
-Start application 2015-10-13 23:00:31.734
-	Trying to connect to 192.168.0.117:1234
-	Connected succefsully to 192.168.0.117:1234
-	Set SO_TIMEOUT to 1ms

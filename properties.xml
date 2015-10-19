@@ -7,4 +7,5 @@
 	<entry key="LOG_FILE">C:\Users\gianluca\workspace\HubDumper\log\execution.log</entry>
 	<entry key="SATELLITES_LIST">21</entry>
 	<entry key="MAGNETOMETER">YES</entry>
+	<entry key="DUMP_FILE">C:\Users\gianluca\workspace\HubDumper\log\log-%t.log</entry>
 </properties>

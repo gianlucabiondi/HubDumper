@@ -146,8 +146,9 @@ class SingleSensorData {
  */
 public class SensorData {
 	
-	final static int BYTES_READ_FROM_HUB_NOMAG	= 368;
-	final static int BYTES_READ_FROM_HUB_MAG 	= 456;
+	final static int BYTES_READ_FROM_HUB_NOMAG		= 368;
+	final static int BYTES_READ_FROM_HUB_MAG 		= 456;
+	final static int BYTES_READ_FROM_HUB_DEFAULT	= BYTES_READ_FROM_HUB_MAG;
 
 	/* 
 	 * class variables: message components

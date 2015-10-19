@@ -19,15 +19,13 @@ package turingsense;
 import java.io.DataInputStream;
 import java.io.OutputStream;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.FileNotFoundException;
-import java.io.PrintStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+//import java.text.SimpleDateFormat;
+//import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -39,7 +37,6 @@ public class HubControl {
 	private Socket							hubSocket		= null; // socket to the hub
 	private DataInputStream					inStream		= null;	// input stream coming from the hub
 	private OutputStream					outStream		= null;	// output stream coming from the hub
-	private ConcurrentLinkedQueue<byte[]>	queue			= null;	// queue where to put readed frames
 	private Properties						prop			= null; // command line properties
 	private HubReader 						readerThread	= null; // reader class
 	/* Main properties:
@@ -48,16 +45,16 @@ public class HubControl {
 	 * LOG_LEVEL		int 	possible value 0:NONE, 1:ERR, 2:WARN 3:ALL
 	 * LOG_FILE 		string
 	 * SATELLITES_LIST	string	list values separated by comma (,)
+	 * DUMP_FILE 		string
 	 */
-	private int								logLevel		= 2;
-	private PrintStream						log				= null;
-
+	private Log								log				= null; // application log
+//	private Log								dumpFile		= null; // dump file
+	private boolean							useMagnetometer = (SensorData.BYTES_READ_FROM_HUB_DEFAULT == SensorData.BYTES_READ_FROM_HUB_MAG ) ? true : false;
+	private static int						CONNECT_TIMEOUT	= 500; // connection timeout
+	
 	/*
 	 * Constructor:
 	 */
-//	public HubControl() {
-//		// TODO Auto-generated constructor stub 
-//	}
 
 	/*
 	 * Methods:
@@ -84,23 +81,29 @@ public class HubControl {
             System.exit(1);
 		}
 		
-		// read the properties immediately needed
-		logLevel = Integer.parseInt( prop.getProperty("LOG_LEVEL", Integer.toString(logLevel)) );
-		if ( logLevel > 1 & prop.getProperty("LOG_FILE") == "" ) {
-			System.err.println("LOG_LEVEL > 0 but no LOG_FILE specified");
-		}
-		if ( prop.getProperty("LOG_FILE") != null ) {
-			openLogFile();
-		}
-       	if (logLevel >= 1 & log != null) log.println("Start application " + (new Timestamp(System.currentTimeMillis())).toString());
+		// open the application log file
+		log = new Log( prop.getProperty("LOG_LEVEL"), prop.getProperty("LOG_FILE"));
+		log.write( Log.INFORMATION , "\nStart application " + (new Timestamp(System.currentTimeMillis())).toString() );
+				
+		// open the dump file - append the actual date 
+//		String 				fileName	= prop.getProperty("DUMP_FILE");
+//		SimpleDateFormat	dateFormat	= new SimpleDateFormat("yyyy-MM-dd_HH_mm_ss"); 
+//		StringBuilder 		sb			= new StringBuilder( fileName );
+//		fileName = sb.replace( fileName.lastIndexOf("%t"), 
+//				fileName.lastIndexOf("%t")+2, 
+//				dateFormat.format(new Date())).toString();
+//		dumpFile = new Log( Log.ALL, fileName );
+
+		// read main properties
+		useMagnetometer = (prop.getProperty("MAGNETOMETER").equals("YES") ) ? true : false;
 				
 		return true;
 	}
 	
 	public boolean close () {
 
-       	if (logLevel >= 1 & log != null) log.println("Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
-		closeLogFile();
+       	log.write( Log.INFORMATION, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
+		log.close();
 
 		return true;
 	}
@@ -118,22 +121,23 @@ public class HubControl {
         // create a new socket
         try {
         	
-        	if (logLevel >= 3 & log != null) log.println("	Trying to connect to " + hostName + ":" + portNumber);
-        	hubSocket = new Socket( hostName, portNumber );
-        	if (logLevel >= 3 & log != null) log.println("	Connected succefsully to " + hostName + ":" + portNumber);
+        	log.write(Log.INFORMATION, "	Trying to connect to " + hostName + ":" + portNumber);
         	
-        	hubSocket.setSoTimeout(0);
-        	if (logLevel >= 3 & log != null) log.println("	Set SO_TIMEOUT to 0ms");
+        	hubSocket = new Socket( hostName, portNumber );
+        	log.write(Log.INFORMATION, "	Connected succefsully to " + hostName + ":" + portNumber);
+        	
+        	hubSocket.setSoTimeout( CONNECT_TIMEOUT );
+        	log.write(Log.INFORMATION, "	Set SO_TIMEOUT to " + CONNECT_TIMEOUT + "ms");
         	
         	inStream  = new DataInputStream( hubSocket.getInputStream());
         	outStream = hubSocket.getOutputStream();
 
         } catch (UnknownHostException e) {
-        	if (logLevel >= 1 & log != null) log.println("Host ? " + hostName);
+        	log.write(Log.ERROR, "Host ? " + hostName);
             System.err.println("Host ? " + hostName);
             System.exit(1);
         } catch (IOException e) {
-        	if (logLevel >= 1 & log != null) log.println("I/O error in opening socket");
+        	log.write(Log.ERROR, "I/O error in opening socket");
             System.err.println("I/O error in opening socket");
             System.exit(1);
         } 
@@ -147,11 +151,11 @@ public class HubControl {
 			if (hubSocket != null) {
 				hubSocket.close();
 				hubSocket = null;
-	        	if (logLevel >= 3 & log != null) log.println("	Disconnected from hub");
+	        	log.write(Log.INFORMATION, "	Disconnected from hub");
 			}
 
 		} catch (IOException e) {
-        	if (logLevel >= 1 & log != null) log.println("I/O error in closing socket");
+        	log.write(Log.ERROR, "I/O error in closing socket");
             System.err.println("I/O error in closing socket");
             System.exit(1);
         }
@@ -160,7 +164,11 @@ public class HubControl {
 	}
 
 	public boolean initSensors ( boolean b_set_rtc, boolean b_set_satellites ) {
+		
 		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+		
+		// NOT_ACTIVE & SENDING
+		// (eventually SET_RTC & SET_SATELLITES)
 		HubCommandData	command = new HubCommandData (
 				outStream,
 				HubCommandData.WIFI_NOT_ACTIVE | 
@@ -168,20 +176,26 @@ public class HubControl {
 				( b_set_rtc ? HubCommandData.WIFI_SET_RTC : HubCommandData.WIFI_VOID ) |
 				( b_set_satellites ? HubCommandData.WIFI_SET_SATELLITES : HubCommandData.WIFI_VOID ),
 				aSatList,
-				logLevel,
 				log );
 		
 		return command.send();
 	}
 	
-	public boolean startRecording () {
+	public boolean startDumping () {
+
+		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// queue where to put readed frames
 		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+
+		// prepare Queue and reading thread
+		readerThread = new HubReader( inStream, queue, log );
+		readerThread.setUseMagnetometer( useMagnetometer );
+
+		// ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_ACTIVE | 
 				HubCommandData.WIFI_SEND,
 				aSatList,
-				logLevel,
 				log );
 		
 		if ( ! command.send() ) {
@@ -189,71 +203,36 @@ public class HubControl {
 		};
 		
 		// start new thread to read from the hub
-		queue = new ConcurrentLinkedQueue<byte[]>();
-		readerThread = new HubReader( inStream, queue, log );
-		readerThread.setUseMagnetometer((prop.getProperty("MAGNETOMETER").equals("YES") ) ? true : false );
 		readerThread.start();
 		
 		return true;
 		
 	}
 	
-	public boolean stopRecording () {
+	public boolean stopDumping () {
+
 		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+
+		// NOT ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_NOT_ACTIVE | 
 				HubCommandData.WIFI_SEND,
 				aSatList,
-				logLevel,
 				log );
 		
-		return command.send();
-	}
-	
-	private boolean openLogFile () {
-		SimpleDateFormat dateFormat = new SimpleDateFormat("_yyyy-MM-dd_HH_mm_ss."); 
-		StringBuilder	 sb;
-		String			 fileName;
+		if ( ! command.send() ) {
+			return false;
+		};
 
-		if (log != null) {
-			return true;
-		}
-		
-		try {
-
-			fileName = prop.getProperty("LOG_FILE");
-			sb = new StringBuilder( fileName );
-			fileName = sb.replace(fileName.lastIndexOf('.'), fileName.lastIndexOf('.')+1, dateFormat.format(new Date())).toString();
-			
-			log = new PrintStream( new FileOutputStream( fileName, true /* append */ ));
-
-	       	if (logLevel >= 1 & log != null) log.println("Changed log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
-
-		} catch (FileNotFoundException e) {
-			System.err.println("Error in opening propertis file: file not found!");
-            System.exit(1);
-		} 
+		// stop the reading thread 
+		readerThread.stopReading();
+		readerThread	= null;
 		
 		return true;
-		
 	}
 	
-	private boolean closeLogFile () {
-
-		if (log != null) { 
-	       	if (logLevel >= 1 & log != null) log.println("Change log file " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
-			log.close();
-			log = null;
-		}
-
-		return true;
-	}
-
-	/*	public boolean sendCommand ( int state, int rtcValue ) {
-	return true;
-}
-*/	
+	
 	/*
 	 * Main method
 	 */
@@ -273,11 +252,11 @@ public class HubControl {
 		System.out.println(
 				"Enter : 1 - Connect\n" +
 				"      : 2 - Init Sensors (declare sensors & init RTC)\n" +
-				"      : 3 - Start Recording\n" +
-				"      : 4 - Stop Recording\n" +
+				"      : 3 - Start Dumping\n" +
+				"      : 4 - Stop Dumping\n" +
 				"      : 5 - Deactivate Sensors (NO ACTIVE & SENDING)\n" +
 				"      : 6 - Disconnect\n" +
-				"      : 7 - Change Log File\n" +
+				"      : 7 - Change Dump File\n" +
 				"      : q - Quit\n"
 						);
 		// main loop waiting user input
@@ -289,21 +268,19 @@ public class HubControl {
 			case '2': // Init Sensors (declare sensors & init RTC)
 				hubCtrl.initSensors(true, true);
 				break;
-			case '3': // Start Recording
-				hubCtrl.startRecording();
+			case '3': // Start Dumping (ACTIVE & SEND)
+				hubCtrl.startDumping();
 				break;
-			case '4': // Stop Recording
-				hubCtrl.stopRecording();
+			case '4': // Stop Dumping (NOT ACTIVE & SEND)
+				hubCtrl.stopDumping();
 				break;
-			case '5': // Deactivate Sensors (NO ACTIVE & SENDING)
+			case '5': // Deactivate Sensors (NOT ACTIVE & SEND)
 				hubCtrl.initSensors(false, false);
 				break;
 			case '6': // Disconnect
 				hubCtrl.disconnect();
 				break;
-			case '7': // Change log file
-				hubCtrl.closeLogFile();
-				hubCtrl.openLogFile();
+			case '7': // Change dump file
 				break;
 			case 'q': // quit
 				break;
