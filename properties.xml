@@ -4,6 +4,8 @@
 	<entry key="HUB_IP">192.168.0.117</entry>
 	<entry key="HUB_PORT">1234</entry>
 	<entry key="LOG_LEVEL">3</entry>
-	<entry key="LOG_FILE">C:\Users\gianluca\workspace\HubDumper\execution.log</entry>
-	<entry key="SATELLITES_LIST">20, 4</entry>
+	<entry key="LOG_FILE">C:\Users\gianluca\workspace\HubDumper\log\execution.log</entry>
+	<entry key="SATELLITES_LIST">21</entry>
+	<entry key="MAGNETOMETER">YES</entry>
+	<entry key="DUMP_FILE">C:\Users\gianluca\workspace\HubDumper\log\log-%t.log</entry>
 </properties>
