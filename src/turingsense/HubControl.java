@@ -24,6 +24,7 @@ import java.io.FileNotFoundException;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 //import java.text.SimpleDateFormat;
 //import java.util.Date;
 import java.util.Properties;
@@ -38,7 +39,8 @@ public class HubControl {
 	private DataInputStream					inStream		= null;	// input stream coming from the hub
 	private OutputStream					outStream		= null;	// output stream coming from the hub
 	private Properties						prop			= null; // command line properties
-	private HubReader 						readerThread	= null; // reader class
+	private HubReader 						readerThread	= null; // reader object (only one)
+	private ArrayList<HubWriter>			writerThread	= new ArrayList();	// writer objects (one or more)
 	/* Main properties:
 	 * HUB_IP			string
 	 * HUB_PORT			int
@@ -50,7 +52,7 @@ public class HubControl {
 	private Log								log				= null; // application log
 //	private Log								dumpFile		= null; // dump file
 	private boolean							useMagnetometer = (SensorData.BYTES_READ_FROM_HUB_DEFAULT == SensorData.BYTES_READ_FROM_HUB_MAG ) ? true : false;
-	private static int						CONNECT_TIMEOUT	= 500; // connection timeout
+	private static final int				CONNECT_TIMEOUT	= 500; // connection timeout
 	
 	/*
 	 * Constructor:
@@ -85,15 +87,6 @@ public class HubControl {
 		log = new Log( prop.getProperty("LOG_LEVEL"), prop.getProperty("LOG_FILE"));
 		log.write( Log.INFORMATION , "\nStart application " + (new Timestamp(System.currentTimeMillis())).toString() );
 				
-		// open the dump file - append the actual date 
-//		String 				fileName	= prop.getProperty("DUMP_FILE");
-//		SimpleDateFormat	dateFormat	= new SimpleDateFormat("yyyy-MM-dd_HH_mm_ss"); 
-//		StringBuilder 		sb			= new StringBuilder( fileName );
-//		fileName = sb.replace( fileName.lastIndexOf("%t"), 
-//				fileName.lastIndexOf("%t")+2, 
-//				dateFormat.format(new Date())).toString();
-//		dumpFile = new Log( Log.ALL, fileName );
-
 		// read main properties
 		useMagnetometer = (prop.getProperty("MAGNETOMETER").equals("YES") ) ? true : false;
 				
@@ -186,9 +179,13 @@ public class HubControl {
 		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// queue where to put readed frames
 		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
 
-		// prepare Queue and reading thread
+		// prepare reading and writing thread
+		// reader
 		readerThread = new HubReader( inStream, queue, log );
 		readerThread.setUseMagnetometer( useMagnetometer );
+		// writer
+		writerThread.add(0, new HubWriter( prop.getProperty("DUMP_FILE"), queue, log ));
+		//writerThread.setUseMagnetometer( useMagnetometer );
 
 		// ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
@@ -199,11 +196,13 @@ public class HubControl {
 				log );
 		
 		if ( ! command.send() ) {
+			readerThread = null;
 			return false;
 		};
 		
-		// start new thread to read from the hub
+		// start new threads to read from the hub & write to the file
 		readerThread.start();
+		writerThread.get(0).start();
 		
 		return true;
 		
@@ -228,8 +227,28 @@ public class HubControl {
 		// stop the reading thread 
 		readerThread.stopReading();
 		readerThread	= null;
-		
+
+		// notify the writer that the reader has stopped
+		writerThread.get(0).notifyReaderDeath();
+
 		return true;
+	}
+	
+	public boolean changeDumpFile () {
+
+		// assign a new queue to the reader
+		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// new queue
+		readerThread.changeQueue(queue);
+		
+		// tell the old writer that no one will feed his queue anymore
+		writerThread.get(0).notifyReaderDeath();
+		
+		// create a new writer and start it
+		writerThread.add(0, new HubWriter( prop.getProperty("DUMP_FILE"), queue, log ));
+		writerThread.get(0).start();
+
+		return true;
+		
 	}
 	
 	
@@ -281,6 +300,7 @@ public class HubControl {
 				hubCtrl.disconnect();
 				break;
 			case '7': // Change dump file
+				hubCtrl.changeDumpFile();
 				break;
 			case 'q': // quit
 				break;

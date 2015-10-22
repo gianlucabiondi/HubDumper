@@ -11,16 +11,17 @@ import java.io.PrintStream;
 public class Log {
 
 	// static const for log level
-	public static int	NONE			= 0;
-	public static int	ERROR			= 1;
-	public static int	WARNING			= 2;
-	public static int	INFORMATION		= 3;
-	public static int	ALL				= INFORMATION;
-	public static int	DEFAULT_LEVEL	= WARNING;
+	public static final int	NONE			= 0;
+	public static final int	ERROR			= 1;
+	public static final int	WARNING			= 2;
+	public static final int	INFORMATION		= 3;
+	public static final int	DEBUG			= 4;
+	public static final int	ALL				= DEBUG;
+	public static final int	DEFAULT_LEVEL	= WARNING;
 	
 	// private variables
-	private int			logLevel		= DEFAULT_LEVEL;
-	private PrintStream	log				= null;
+	private int				logLevel		= DEFAULT_LEVEL;
+	private PrintStream		log				= null;
 
 	/**
 	 * Constructor
@@ -71,14 +72,21 @@ public class Log {
 	/**
 	 * Write into log file 
 	 */
-	public void write( int p_level, String p_text ) {
+	public void write( int p_level, String p_text, boolean p_echo ) {
 		if ( p_level <= logLevel ) {
 			log.println( p_text );
+			if (p_echo) { 
+				System.out.println( p_text );
+			}
 		}
 	}
 	
+	public void write( int p_level, String p_text ) {
+		this.write( p_level, p_text, false );
+	}
+	
 	public void write( String p_text ) {
-		this.write( NONE, p_text );
+		this.write( NONE, p_text, false );
 	}
 	
 	/**
