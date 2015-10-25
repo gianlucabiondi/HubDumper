@@ -1,19 +1,136 @@
 package turingsense;
 
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.util.Scanner;
-import java.io.PrintWriter;
-import java.util.regex.Pattern;
-
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Arrays;
 
 /**
  * @author gianluca
  *
+ * Data section of messages with msgType = 'sensorData'
  */
+public class SensorData {
+	
+	final static int BYTES_WITH_MAG	= 
+			Integer.BYTES + 										// hubID
+			Integer.BYTES + 										// frameType
+			Integer.BYTES + 										// timestamp
+			Integer.BYTES +											// bitmap
+			SingleSensorData.BYTES_WITH_MAG * Common.MAX_SENSORS;	// satellite_ids[ MAX_SAT_SENSORS ]
 
+	final static int BYTES_WITHOUT_MAG = 
+			Integer.BYTES + 										// hubID
+			Integer.BYTES + 										// frameType
+			Integer.BYTES + 										// timestamp
+			Integer.BYTES +											// bitmap
+			SingleSensorData.BYTES_WITHOUT_MAG * Common.MAX_SENSORS;// satellite_ids[ MAX_SAT_SENSORS ]
+
+	/* 
+	 * class variables: message components
+	 */
+	int 				hubID;      			//  0 - Unique hub's ID
+	byte				frameType;  			//  4 - 0 - 10-sensor right handed 
+												//      1 - 10-sensor left handed
+												//      2 - 5-sensor upper body
+												//      3 - 5-sensor lower body
+	// ?????
+	byte  				unused_1;
+	byte  				unused_2;
+	byte  				unused_3;
+	
+	int 				timestamp;  			//  8 - offset timestamp
+	int 				bitmap;     			// 12 - bitmap indicating sensor 
+	SingleSensorData[] 	objSingleSensorData;	// 16 - single sensor data (repeated "arraySize" times)
+	
+	// constructors
+	public SensorData( byte[] p_frame, boolean p_bUseMag, Log p_log ) {
+		
+		int sensorDataLength = (p_bUseMag ? SingleSensorData.BYTES_WITH_MAG : SingleSensorData.BYTES_WITHOUT_MAG);
+		
+		if (p_log != null) p_log.writeln(Log.DEBUG, "-->Sensor data " + Arrays.toString(p_frame));
+
+		ByteBuffer buf = ByteBuffer.wrap( p_frame );
+		
+		// Hub speaks LITTLE_ENDIAN "language"
+		buf.order( ByteOrder.LITTLE_ENDIAN );
+
+    	// translate the frame from byte
+		hubID 		= buf.getInt();
+		frameType	= buf.get();
+		unused_1	= buf.get();
+		unused_2	= buf.get();
+		unused_3	= buf.get();
+		timestamp	= buf.getInt();
+		bitmap		= buf.getInt();
+		
+		objSingleSensorData = new SingleSensorData[Common.MAX_SENSORS];
+		
+		for (int i = 0; i < Common.MAX_SENSORS; i++ ) { 
+			int start = Integer.BYTES +
+						Integer.BYTES +
+						Integer.BYTES +
+						Integer.BYTES + 
+						(i * sensorDataLength);
+			int stop = start + sensorDataLength;
+			boolean bActive = ((bitmap & (1 << i)) != 0);
+			
+			objSingleSensorData[i] = new SingleSensorData( i, Arrays.copyOfRange( p_frame, start, stop), p_bUseMag, bActive, p_log );
+		}
+		
+	}
+
+	public SensorData( byte[] p_frame, boolean p_bUseMag ) {
+		this( p_frame, p_bUseMag, null );
+	}
+
+	@Override
+	public String toString() {
+		String ret = new String( 
+				
+				Integer.toString( hubID ) + Common.FIELD_SEPARATOR +
+				Byte.toString( frameType ) + Common.FIELD_SEPARATOR +
+				Integer.toString( timestamp ) + Common.FIELD_SEPARATOR +
+				Integer.toString( bitmap )
+				
+				);
+
+		for ( int i = 0; i < Common.MAX_SENSORS ; i++ ) {
+			ret += (Common.FIELD_SEPARATOR + objSingleSensorData[i].toString());
+		}
+
+		return ret;
+	}
+	
+	public boolean isSatelliteValid (int idx) { 
+		if ((idx >= 0) & (idx < Common.MAX_SENSORS)) return objSingleSensorData[idx].isSatelliteValid();
+		return false; 
+	}
+
+}
+
+/**
+ * 
+ * Single sensor data structure
+ *
+ */
 class SingleSensorData {
 	
+	final static int BYTES_WITH_MAG		= 
+			Integer.BYTES + 		// satelliteID
+			Short.BYTES * 3 + 		// accel_X_Y_Z
+			Short.BYTES * 3 + 		// gyro_X_Y_Z
+			Short.BYTES * 3 + 		// mag_X_Y_Z
+			Byte.BYTES * 2 + 		// unused
+			Float.BYTES * 4; 		// quaternion
+
+	final static int BYTES_WITHOUT_MAG	= 
+			Integer.BYTES + 		// satelliteID
+			Short.BYTES * 3 + 		// accel_X_Y_Z
+			Short.BYTES * 3 + 		// gyro_X_Y_Z
+			Float.BYTES * 4; 		// quaternion
+
+	private boolean bUseMag;
+	private boolean bSatActive;
 
 	/* 
 	 * class variables: single sensor message components
@@ -33,6 +150,8 @@ class SingleSensorData {
 	short mag_Z;  			// Magnetometer's: Z coordinate 
 
 	// here in C struct sensor_record_t there are 2 bytes of structure alignment
+	byte  unused_1;
+	byte  unused_2;
 	
 	float quat_W;  			// Quarternion's: rotation degree around the vector
 	float quat_X;  			// Quarternion's: X coordinate 
@@ -40,208 +159,106 @@ class SingleSensorData {
 	float quat_Z;  			// Quarternion's: Z coordinate 
 
 	// constructors
-	public SingleSensorData( DataInputStream in ) throws IOException {
+	public SingleSensorData( int idx, byte[] p_frame, boolean p_useMag, boolean p_satActive, Log p_log ) {
 
-		satelliteID	= in.readInt();
-
-		accel_X 	= in.readShort();
-		accel_Y 	= in.readShort();
-		accel_Z 	= in.readShort();
-
-		gyro_X 		= in.readShort();
-		gyro_Y 		= in.readShort();
-		gyro_Z 		= in.readShort();
-
-		// TODO: read also Magnetometer's coordinate;
-//		mag_X 		= in.readShort();
-//		mag_Y 		= in.readShort();
-//		mag_Z 		= in.readShort();
+		ByteBuffer buf = ByteBuffer.wrap( p_frame );
 		
-		quat_W 		= in.readFloat();
-		quat_X 		= in.readFloat();
-		quat_Y 		= in.readFloat();
-		quat_Z 		= in.readFloat();
+		// Hub speaks LITTLE_ENDIAN "language"
+		buf.order( ByteOrder.LITTLE_ENDIAN );
 
+		if (p_log != null) p_log.writeln(Log.DEBUG, "-->Single Sensor data (" + Boolean.toString(p_satActive) + ") " + Arrays.toString(p_frame));
 		
+		bUseMag 	= p_useMag;
+		bSatActive	= p_satActive;
+		
+		satelliteID	= buf.getInt();
+		if (!bSatActive) satelliteID = idx;
+
+		accel_X 	= buf.getShort();
+		accel_Y 	= buf.getShort();
+		accel_Z 	= buf.getShort();
+
+		gyro_X 		= buf.getShort();
+		gyro_Y 		= buf.getShort();
+		gyro_Z 		= buf.getShort();
+
+		if (p_useMag) {
+			mag_X 		= buf.getShort();
+			mag_Y 		= buf.getShort();
+			mag_Z 		= buf.getShort();
+			unused_1	= buf.get(); // alignment
+			unused_2	= buf.get(); // alignment
+		}
+		
+		quat_W 		= buf.getFloat();
+		quat_X 		= buf.getFloat();
+		quat_Y 		= buf.getFloat();
+		quat_Z 		= buf.getFloat();
+
 	}
 
-	public SingleSensorData( Scanner inScanner ) {
-
-		satelliteID	= inScanner.nextBigInteger().intValue();
-
-		accel_X 	= inScanner.nextShort();
-		accel_Y 	= inScanner.nextShort();
-		accel_Z 	= inScanner.nextShort();
-
-		gyro_X 		= inScanner.nextShort();
-		gyro_Y 		= inScanner.nextShort();
-		gyro_Z 		= inScanner.nextShort();
-
-		// TODO: read also Magnetometer's coordinate;
-//		mag_X 		= inScanner.nextShort();
-//		mag_Y 		= inScanner.nextShort();
-//		mag_Z 		= inScanner.nextShort();
-		
-		quat_W 		= nextFloat(inScanner);
-		quat_X 		= nextFloat(inScanner);
-		quat_Y 		= nextFloat(inScanner);
-		quat_Z 		= nextFloat(inScanner);
-		
-	}
-
-	// methods 
-	private static final Pattern nan = Pattern.compile( "nan", Pattern.CASE_INSENSITIVE );
-	private static float nextFloat( Scanner inScanner ) {
-	    if ( inScanner.hasNext(nan) ) {
-	    	inScanner.next();
-	        return Float.NaN;
-	    }
-	    return inScanner.nextFloat();
-	}	
-	
-	public void send( PrintWriter out ) {
-		// sends Sensor Data through the PrintWriter
-		out.print( satelliteID );
-		out.print( accel_X );
-		out.print( accel_Y );
-		out.print( accel_Z );
-		out.print( gyro_X );
-		out.print( gyro_Y );
-		out.print( gyro_Z );
-		out.print( quat_W );
-		out.print( quat_X );
-		out.print( quat_Y );
-		out.print( quat_Z );
-				
+	public SingleSensorData( int idx, byte[] p_frame, boolean p_useMag, boolean p_satActive ) {
+		this( idx, p_frame, p_useMag, p_satActive, null );
 	}
 	
 	@Override
 	public String toString() {
-		String ret = new String( 
-				
-				Integer.toString( satelliteID ) + " " +
+		String ret;
+		
+		if (bSatActive) {
+			
+			ret = new String( 
+					
+					Integer.toString( satelliteID ) + Common.FIELD_SEPARATOR +
 
-				Short.toString(accel_X) + " " +
-				Short.toString(accel_Y) + " " +
-				Short.toString(accel_Z) + " " +
+					Short.toString(accel_X) + Common.FIELD_SEPARATOR +
+					Short.toString(accel_Y) + Common.FIELD_SEPARATOR +
+					Short.toString(accel_Z) + Common.FIELD_SEPARATOR +
 
-				Short.toString(gyro_X) + " " +
-				Short.toString(gyro_Y) + " " +
-				Short.toString(gyro_Z) + " " +
+					Short.toString(gyro_X) + Common.FIELD_SEPARATOR +
+					Short.toString(gyro_Y) + Common.FIELD_SEPARATOR +
+					Short.toString(gyro_Z) + Common.FIELD_SEPARATOR +
+					
+					(bUseMag ? Short.toString(mag_X) + Common.FIELD_SEPARATOR: "") +
+					(bUseMag ? Short.toString(mag_Y) + Common.FIELD_SEPARATOR: "") +
+					(bUseMag ? Short.toString(mag_Z) + Common.FIELD_SEPARATOR: "") +
 
-				Float.toString(quat_W) + " " +
-				Float.toString(quat_X) + " " +
-				Float.toString(quat_Y) + " " +
-				Float.toString(quat_Z)
-				
-				);
+					Float.toString(quat_W) + Common.FIELD_SEPARATOR +
+					Float.toString(quat_X) + Common.FIELD_SEPARATOR +
+					Float.toString(quat_Y) + Common.FIELD_SEPARATOR +
+					Float.toString(quat_Z)
+					
+					);
+		} else {
+			
+			ret = new String( 
+					
+					Integer.toString( satelliteID ) + Common.FIELD_SEPARATOR +
+
+					"0" + Common.FIELD_SEPARATOR +
+					"0" + Common.FIELD_SEPARATOR +
+					"0" + Common.FIELD_SEPARATOR +
+
+					"0" + Common.FIELD_SEPARATOR +
+					"0" + Common.FIELD_SEPARATOR +
+					"0" + Common.FIELD_SEPARATOR +
+					
+					(bUseMag ? "0" + Common.FIELD_SEPARATOR: "") +
+					(bUseMag ? "0" + Common.FIELD_SEPARATOR: "") +
+					(bUseMag ? "0" + Common.FIELD_SEPARATOR: "") +
+
+					"0.000000000" + Common.FIELD_SEPARATOR +
+					"0.000000000" + Common.FIELD_SEPARATOR +
+					"0.000000000" + Common.FIELD_SEPARATOR +
+					"0.000000000"
+					
+					);
+		}
 		
 		return ret;
 	}
-
-}
-
-/* 
- * Data section of messages with msgType = 'sensorData'
- */
-public class SensorData {
 	
-	final static int BYTES_READ_FROM_HUB_NOMAG		= 368;
-	final static int BYTES_READ_FROM_HUB_MAG 		= 456;
-	final static int BYTES_READ_FROM_HUB_DEFAULT	= BYTES_READ_FROM_HUB_MAG;
+	public boolean isSatelliteValid () { return bSatActive; }
 
-	/* 
-	 * class variables: message components
-	 */
-	int 				hubID;      			// Unique hub's ID
-	byte 				frameType;  			// 0 - 10-sensor right handed 
-												// 1 - 10-sensor left handed
-												// 2 - 5-sensor upper body
-												// 3 - 5-sensor lower body
-	int					arraySize;				// number of sensors
-	int 				timestamp;  			// offset timestamp
-	int 				bitmap;     			// bitmap indicating sensor 
-	SingleSensorData[] 	objSingleSensorData;	// single sensor data (repeated "arraySize" times)
-	
-	// constructors
-	public SensorData( DataInputStream in ) throws IOException {
-
-		// read header data from DataInputStream
-		hubID 		= in.readInt();
-		frameType 	= in.readByte();
-		// TODO: uncomment subsequent read
-		//arraySize   = in.readInt();
-		arraySize   = 10;
-		timestamp 	= in.readInt();
-		bitmap 		= in.readInt();
-		
-		// sensors data array
-		objSingleSensorData = new SingleSensorData[ arraySize ];
-		
-		// read each sensor data
-		for ( int i = 0; i < arraySize ; i++ ) {
-			objSingleSensorData[i] = new SingleSensorData( in );
-		}
-		
-	}
-
-	public SensorData( Scanner inScanner ) {
-		
-			
-			// read header data from DataInputStream
-			hubID 		= inScanner.nextInt();
-			frameType 	= inScanner.nextByte();
-			// TODO: uncomment subsequent read
-			//arraySize   = inScanner.nextInt();
-			arraySize   = 10;
-			timestamp 	= inScanner.nextInt();
-			bitmap 		= inScanner.nextInt();
-			
-			// sensors data array
-			objSingleSensorData = new SingleSensorData[ arraySize ];
-			
-			// read each sensor data
-			for ( int i = 0; i < arraySize ; i++ ) {
-				objSingleSensorData[i] = new SingleSensorData( inScanner );
-			}
-				
-	}
-
-	// methods 
-	public void send( PrintWriter out ) {
-		// sends Sensor Data through the PrintWriter
-		out.print( hubID );
-		out.print( frameType );
-		// TODO: uncomment subsequent write
-		//out.print( arraySize );
-		out.print( timestamp );
-		out.print( bitmap );
-		// read each sensor data
-		for ( int i = 0; i < arraySize ; i++ ) {
-			objSingleSensorData[i].send( out );
-		}
-		// sends the data
-		out.println();
-				
-	}
-	
-	@Override
-	public String toString() {
-		String ret = new String( 
-				
-				Integer.toString( hubID ) + " " +
-				Integer.toString( frameType ) + " " +
-				Integer.toString( timestamp ) + " " +
-				Integer.toString( bitmap )
-				
-				);
-
-		for ( int i = 0; i < arraySize ; i++ ) {
-			ret += (" " + objSingleSensorData[i].toString());
-		}
-
-		return ret;
-	}
-	
 }
 

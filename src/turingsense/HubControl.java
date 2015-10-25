@@ -21,12 +21,11 @@ import java.io.OutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.FileNotFoundException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
-//import java.text.SimpleDateFormat;
-//import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -35,12 +34,12 @@ public class HubControl {
 	/*
 	 * local variables
 	 */
-	private Socket							hubSocket		= null; // socket to the hub
-	private DataInputStream					inStream		= null;	// input stream coming from the hub
-	private OutputStream					outStream		= null;	// output stream coming from the hub
-	private Properties						prop			= null; // command line properties
-	private HubReader 						readerThread	= null; // reader object (only one)
-	private ArrayList<HubWriter>			writerThread	= new ArrayList();	// writer objects (one or more)
+	private Socket					hubSocket		= null; // socket to the hub
+	private DataInputStream			inStream		= null;	// input stream coming from the hub
+	private OutputStream			outStream		= null;	// output stream coming from the hub
+	private MyProperties			prop			= null; // command line properties
+	private HubReader 				readerThread	= null; // reader object (only one)
+	private ArrayList<HubWriter>	writerThread	= new ArrayList<HubWriter>();	// writer objects (one or more)
 	/* Main properties:
 	 * HUB_IP			string
 	 * HUB_PORT			int
@@ -49,10 +48,20 @@ public class HubControl {
 	 * SATELLITES_LIST	string	list values separated by comma (,)
 	 * DUMP_FILE 		string
 	 */
-	private Log								log				= null; // application log
-//	private Log								dumpFile		= null; // dump file
-	private boolean							useMagnetometer = (SensorData.BYTES_READ_FROM_HUB_DEFAULT == SensorData.BYTES_READ_FROM_HUB_MAG ) ? true : false;
-	private static final int				CONNECT_TIMEOUT	= 500; // connection timeout
+	private Log						log				= null; // application log
+	private boolean					useMagnetometer = Common.DEFAULT_USE_MAGNETOMETER;
+	// states matrix: rows -> current state; column -> next state
+	private int						currentState	= 0;
+	private boolean[][]				stateMatrix		= {
+			/* initial state */			{false,	true,	false,	false,	false,	false,	false,	true},
+			/* 1 - connect */			{false,	false,	true,	false,	false,	false,	true,	false},
+			/* 2 - Init Sensors */		{false,	false,	false,	true,	false,	true,	true,	false},
+			/* 3 - Start Dumping */		{false,	false,	false,	false,	true,	true,	false,	false},
+			/* 4 - Change Dump File */	{false,	false,	false,	false,	true,	true,	false,	false},
+			/* 5 - Stop Dumping */		{false,	false,	false,	true,	false,	false,	true,	false},
+			/* 6 - Disconnect */		{false,	true,	false,	false,	false,	false,	false,	true},
+			/* q - Quit */				{false,	false,	false,	false,	false,	false,	false,	false}
+	};
 	
 	/*
 	 * Constructor:
@@ -60,7 +69,7 @@ public class HubControl {
 
 	/*
 	 * Methods:
-	 * - inizitialize the class with parameters (in xml format)
+	 * - initialize the class with parameters (in xml format)
 	 * - close the class
 	 * - connect to the hub
 	 * - stop recording
@@ -68,34 +77,23 @@ public class HubControl {
 	 */
 	public boolean init ( String p_propFile) {
 		
-		prop = new Properties();
-		
-		// open and read property file
-		try {
-
-			this.prop.loadFromXML(new FileInputStream(p_propFile));
-
-		} catch (FileNotFoundException e) {
-			System.err.println("Error in opening propertis file: file not found!");
-            System.exit(1);
-		} catch (IOException e) {
-			System.err.println("Error in opening propertis file!");
-            System.exit(1);
-		}
+		prop = new MyProperties( p_propFile );
 		
 		// open the application log file
-		log = new Log( prop.getProperty("LOG_LEVEL"), prop.getProperty("LOG_FILE"));
-		log.write( Log.INFORMATION , "\nStart application " + (new Timestamp(System.currentTimeMillis())).toString() );
+		log = new Log( prop.LOG_LEVEL, prop.LOG_FILE );
+		log.writeln( Log.NONE , "\n-----------------------------------------------------------" );
+		log.writeln( Log.NONE , "Start application " + (new Timestamp(System.currentTimeMillis())).toString() );
+		log.writeln( Log.INFORMATION, "Log Level -> " + log.getLogLevel() );
 				
 		// read main properties
-		useMagnetometer = (prop.getProperty("MAGNETOMETER").equals("YES") ) ? true : false;
+		useMagnetometer = (prop.MAGNETOMETER.equals("YES") ) ? true : false;
 				
 		return true;
 	}
 	
 	public boolean close () {
 
-       	log.write( Log.INFORMATION, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
+       	log.writeln( Log.NONE, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
 		log.close();
 
 		return true;
@@ -103,9 +101,17 @@ public class HubControl {
 
 	public boolean connect () {
 		
-        String	hostName	= prop.getProperty("HUB_IP");
-        int 	portNumber	= Integer.parseInt(prop.getProperty("HUB_PORT"));
+        String	hostName	= prop.HUB_IP;
+        int 	portNumber	= Integer.parseInt(prop.HUB_PORT);
 
+        // check state matrix
+        int newState = 1;
+        if (!stateMatrix[currentState][newState]) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 1 - connect", Log.ECHO);
+        	return false;
+        }
+        currentState = newState;
+        
         // if socket is already open then return immediately
         if (hubSocket != null) { 
         	return true;
@@ -114,24 +120,24 @@ public class HubControl {
         // create a new socket
         try {
         	
-        	log.write(Log.INFORMATION, "	Trying to connect to " + hostName + ":" + portNumber);
+        	log.writeln(Log.INFORMATION, "Trying to connect to " + hostName + ":" + portNumber);
         	
-        	hubSocket = new Socket( hostName, portNumber );
-        	log.write(Log.INFORMATION, "	Connected succefsully to " + hostName + ":" + portNumber);
+        	hubSocket = new Socket( );
+
+        	hubSocket.setSoTimeout( Common.SOCKET_TIMEOUT_MS );
+        	log.writeln(Log.INFORMATION, "Set SO_TIMEOUT to " + Common.SOCKET_TIMEOUT_MS + "ms");
         	
-        	hubSocket.setSoTimeout( CONNECT_TIMEOUT );
-        	log.write(Log.INFORMATION, "	Set SO_TIMEOUT to " + CONNECT_TIMEOUT + "ms");
+        	hubSocket.connect( new InetSocketAddress(hostName, portNumber) );
+        	log.writeln(Log.INFORMATION, "Connected succefsully to " + hostName + ":" + portNumber);
         	
         	inStream  = new DataInputStream( hubSocket.getInputStream());
         	outStream = hubSocket.getOutputStream();
 
         } catch (UnknownHostException e) {
-        	log.write(Log.ERROR, "Host ? " + hostName);
-            System.err.println("Host ? " + hostName);
+        	log.writeln(Log.ERROR, "===== ERROR: Host ? " + hostName, Log.ECHO);
             System.exit(1);
         } catch (IOException e) {
-        	log.write(Log.ERROR, "I/O error in opening socket");
-            System.err.println("I/O error in opening socket");
+        	log.writeln(Log.ERROR, "===== ERROR: I/O error in opening socket", Log.ECHO);
             System.exit(1);
         } 
         
@@ -139,17 +145,25 @@ public class HubControl {
 	}
 	
 	public boolean disconnect () {
+ 
+		// check state matrix
+        int newState = 6;
+        if (!stateMatrix[currentState][newState]) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 6 - Disconnect", Log.ECHO);
+        	return false;
+        }
+        currentState = newState;
+        
 		try {
 			
 			if (hubSocket != null) {
 				hubSocket.close();
 				hubSocket = null;
-	        	log.write(Log.INFORMATION, "	Disconnected from hub");
+	        	log.writeln(Log.INFORMATION, "Disconnected from hub");
 			}
 
 		} catch (IOException e) {
-        	log.write(Log.ERROR, "I/O error in closing socket");
-            System.err.println("I/O error in closing socket");
+        	log.writeln(Log.ERROR, "===== ERROR: I/O error in closing socket", Log.ECHO);
             System.exit(1);
         }
 
@@ -157,8 +171,14 @@ public class HubControl {
 	}
 
 	public boolean initSensors ( boolean b_set_rtc, boolean b_set_satellites ) {
-		
-		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+		 
+		// check state matrix
+        int newState = 2;
+        if (!stateMatrix[currentState][newState]) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 2 - Init Sensors", Log.ECHO);
+        	return false;
+        }
+        currentState = newState;
 		
 		// NOT_ACTIVE & SENDING
 		// (eventually SET_RTC & SET_SATELLITES)
@@ -168,7 +188,7 @@ public class HubControl {
 				HubCommandData.WIFI_SEND |
 				( b_set_rtc ? HubCommandData.WIFI_SET_RTC : HubCommandData.WIFI_VOID ) |
 				( b_set_satellites ? HubCommandData.WIFI_SET_SATELLITES : HubCommandData.WIFI_VOID ),
-				aSatList,
+				prop.SATELLITES_LIST_ARRAY,
 				log );
 		
 		return command.send();
@@ -177,22 +197,27 @@ public class HubControl {
 	public boolean startDumping () {
 
 		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// queue where to put readed frames
-		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+
+		// check state matrix
+		int newState = 3;
+		if (!stateMatrix[currentState][newState]) {
+			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 3 - Start Dumping", Log.ECHO);
+			return false;
+		}
+		currentState = newState;
 
 		// prepare reading and writing thread
 		// reader
-		readerThread = new HubReader( inStream, queue, log );
-		readerThread.setUseMagnetometer( useMagnetometer );
+		readerThread = new HubReader( inStream, queue, log, "1", useMagnetometer );
 		// writer
-		writerThread.add(0, new HubWriter( prop.getProperty("DUMP_FILE"), queue, log ));
-		//writerThread.setUseMagnetometer( useMagnetometer );
+		writerThread.add(0, new HubWriter( prop.DUMP_FILE, queue, log, String.valueOf(writerThread.size()+1), useMagnetometer, prop.SATELLITES_LIST_ARRAY.length ));
 
 		// ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_ACTIVE | 
 				HubCommandData.WIFI_SEND,
-				aSatList,
+				prop.SATELLITES_LIST_ARRAY,
 				log );
 		
 		if ( ! command.send() ) {
@@ -210,14 +235,20 @@ public class HubControl {
 	
 	public boolean stopDumping () {
 
-		String[] aSatList = prop.getProperty( "SATELLITES_LIST" ).split("\\s*,\\s*");
+		// check state matrix
+		int newState = 5;
+		if (!stateMatrix[currentState][newState]) {
+			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 5 - Stop Dumping", Log.ECHO);
+			return false;
+		}
+		currentState = newState;
 
 		// NOT ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
 				outStream,
 				HubCommandData.WIFI_NOT_ACTIVE | 
 				HubCommandData.WIFI_SEND,
-				aSatList,
+				prop.SATELLITES_LIST_ARRAY,
 				log );
 		
 		if ( ! command.send() ) {
@@ -236,6 +267,14 @@ public class HubControl {
 	
 	public boolean changeDumpFile () {
 
+		// check state matrix
+		int newState = 4;
+		if (!stateMatrix[currentState][newState]) {
+			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 4 - Change Dump File", Log.ECHO);
+			return false;
+		}
+		currentState = newState;
+
 		// assign a new queue to the reader
 		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// new queue
 		readerThread.changeQueue(queue);
@@ -244,12 +283,29 @@ public class HubControl {
 		writerThread.get(0).notifyReaderDeath();
 		
 		// create a new writer and start it
-		writerThread.add(0, new HubWriter( prop.getProperty("DUMP_FILE"), queue, log ));
+		writerThread.add(0, new HubWriter( prop.DUMP_FILE, queue, log, String.valueOf(writerThread.size()+1), useMagnetometer, prop.SATELLITES_LIST_ARRAY.length ));
 		writerThread.get(0).start();
 
 		return true;
 		
 	}
+
+	public boolean quit () {
+
+		// check state matrix
+		int newState = 7;
+		if (!stateMatrix[currentState][newState]) {
+			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to q - Quit", Log.ECHO);
+			return false;
+		}
+		currentState = newState;
+
+		// close application
+		close();
+	
+		return true;
+	}
+
 	
 	
 	/*
@@ -266,20 +322,22 @@ public class HubControl {
             System.exit(1);
 		}
 		hubCtrl.init(args[0]);
-		//System.out.print((prop.getProperty("MAGNETOMETER") == "YES")?"YES":"NO");
 
 		System.out.println(
 				"Enter : 1 - Connect\n" +
-				"      : 2 - Init Sensors (declare sensors & init RTC)\n" +
-				"      : 3 - Start Dumping\n" +
-				"      : 4 - Stop Dumping\n" +
-				"      : 5 - Deactivate Sensors (NO ACTIVE & SENDING)\n" +
+				"      : 2 - Init Sensors (NO ACTIVE & SEND & declare sensors & init RTC)\n" +
+				"      : 3 - Start Dumping (ACTIVE & SEND)\n" +
+				"      : 4 - Change Dump File\n" +
+				"      : 5 - Stop Dumping (NO ACTIVE & SEND)\n" +
+				//"      : 6 - Deactivate Sensors (NO ACTIVE & SEND)\n" +
 				"      : 6 - Disconnect\n" +
-				"      : 7 - Change Dump File\n" +
 				"      : q - Quit\n"
 						);
 		// main loop waiting user input
-		while ( (inputChar = (char)System.in.read()) != 'q'  ) {
+		while ( true ) {
+			// read a command
+			inputChar = (char)System.in.read();
+			
 			switch (inputChar) {
 			case '1': // connect
 				hubCtrl.connect();
@@ -290,24 +348,74 @@ public class HubControl {
 			case '3': // Start Dumping (ACTIVE & SEND)
 				hubCtrl.startDumping();
 				break;
-			case '4': // Stop Dumping (NOT ACTIVE & SEND)
+			case '4': // Change dump file
+				hubCtrl.changeDumpFile();
+				break;
+			case '5': // Stop Dumping (NOT ACTIVE & SEND)
 				hubCtrl.stopDumping();
 				break;
-			case '5': // Deactivate Sensors (NOT ACTIVE & SEND)
-				hubCtrl.initSensors(false, false);
-				break;
+			//case '6': // Deactivate Sensors (NOT ACTIVE & SEND)
+			//	hubCtrl.initSensors(false, false);
+			//	break;
 			case '6': // Disconnect
 				hubCtrl.disconnect();
 				break;
-			case '7': // Change dump file
-				hubCtrl.changeDumpFile();
-				break;
 			case 'q': // quit
+				hubCtrl.quit();
 				break;
 			}
+			if (inputChar == 'q') break;
 		}
-		hubCtrl.disconnect();
-		hubCtrl.close();
+	}
+
+}
+
+
+class MyProperties {
+
+	public String 	LOG_LEVEL;
+	public String 	LOG_FILE;
+	public String 	MAGNETOMETER;
+	public String 	HUB_IP;
+	public String 	HUB_PORT;
+	public String[]	SATELLITES_LIST_ARRAY;
+	public String 	DUMP_FILE;
+
+	public MyProperties( String p_propFile ) {
+
+		String 	SATELLITES_LIST;
+		Properties prop = new Properties();
+		
+		// open and read property file
+		try {
+
+			prop.loadFromXML(new FileInputStream(p_propFile));
+
+		} catch (FileNotFoundException e) {
+			System.err.println("Error in opening propertis file: file not found!");
+            System.exit(1);
+		} catch (IOException e) {
+			System.err.println("Error in opening propertis file!");
+            System.exit(1);
+		} 
+		
+		LOG_LEVEL = prop.getProperty("LOG_LEVEL");
+		if (LOG_LEVEL.equals( "NONE" ))		LOG_LEVEL = "0";
+		if (LOG_LEVEL.equals( "ERROR" ))		LOG_LEVEL = "1";
+		if (LOG_LEVEL.equals( "WARNING" ))		LOG_LEVEL = "2";
+		if (LOG_LEVEL.equals( "INFORMATION" ))	LOG_LEVEL = "3";
+		if (LOG_LEVEL.equals( "DEBUG" ))		LOG_LEVEL = "4";
+		if ( !LOG_LEVEL.equals("0") & !LOG_LEVEL.equals("1") & !LOG_LEVEL.equals("2") & !LOG_LEVEL.equals("3") & !LOG_LEVEL.equals("4") & 
+				!LOG_LEVEL.equals("NONE") & !LOG_LEVEL.equals("ERROR") & !LOG_LEVEL.equals("WARNING") & !LOG_LEVEL.equals("INFORMATION") & !LOG_LEVEL.equals("DEBUG") ) {
+			LOG_LEVEL = Integer.toString(Common.DEFAULT_LOG_LEVEL);
+		}
+		LOG_FILE = prop.getProperty("LOG_FILE");
+		MAGNETOMETER = prop.getProperty("MAGNETOMETER");
+		HUB_IP = prop.getProperty("HUB_IP");
+		HUB_PORT = prop.getProperty("HUB_PORT");
+		SATELLITES_LIST = prop.getProperty( "SATELLITES_LIST" );
+		SATELLITES_LIST_ARRAY = SATELLITES_LIST.split("\\s*,\\s*");		
+		DUMP_FILE = prop.getProperty("DUMP_FILE");
 	}
 
 }

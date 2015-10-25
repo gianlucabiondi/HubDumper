@@ -11,11 +11,10 @@ import java.io.FileNotFoundException;
 //import java.io.FileOutputStream;
 //import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
@@ -29,27 +28,33 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class HubWriter extends Thread {
 
-	private static final int				SLEEP_A_BIT		= 1000;		// length of idle time waiting the queue fills
-	private static final int				MAX_NUM_SLEEPS	= 3;		// max times the thread can wait for the queue to fill
 	/*
 	 * local variables
 	 */
-	private ConcurrentLinkedQueue<byte[]>	queue			= null;		// queue where to put readed frames
-	private PrintStream						dumpFile		= null;		// here we write frames sent from the hub
-	private Log								log				= null;		// log file
-	private boolean							thereIsAReader	= true;		// true -> there is a reader feeding the queue
-																		// false -> there is no reader feeding the queue
+	private ConcurrentLinkedQueue<byte[]>	queue				= null;		// queue where to put read frames
+	private PrintStream						dumpFile			= null;		// here we write frames sent from the hub
+	private Log								log					= null;		// log file
+	private boolean							thereIsStillAReader	= true;		// true -> there is a reader feeding the queue
+																			// false -> there is no reader feeding the queue
+	private boolean							useMag				= Common.DEFAULT_USE_MAGNETOMETER;
+	private int								numActiveSatellites;			// number of effective satellites used
 
 	/*
 	 * Constructor:
 	 */
-	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que, Log p_log ) {
+	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que, Log p_log, String p_threadName, boolean p_useMag, int p_numActiveSatellites ) {
 		
 		// record the log's reference
 		log = p_log;
 
 		// record the queue's reference
 		queue = p_que;
+		
+		useMag = p_useMag;
+		numActiveSatellites = p_numActiveSatellites;
+		
+		// set the thread name
+		if ( p_threadName != null ) this.setName( p_threadName );
 
 		// open the dump file - append the actual date 
 		String 				fileName	= p_fileName;
@@ -59,9 +64,12 @@ public class HubWriter extends Thread {
 				fileName.lastIndexOf("%t")+2, 
 				dateFormat.format(new Date())).toString();
 
+		if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": creating ..." );
+
 		try {
-			if (log != null) log.write( Log.INFORMATION, "Writer Thread: going to write to " + fileName );
+
 			dumpFile = new PrintStream( fileName );
+			if (log != null) log.writeln( Log.INFORMATION, "Writer Thread " + getName() + ": going to write to " + fileName );
 
 		} catch (FileNotFoundException e) {
 			dumpFile = null;
@@ -71,16 +79,27 @@ public class HubWriter extends Thread {
 		
 	}
 
+	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que, Log p_log, String p_threadName, boolean p_useMag ) {
+		this( p_fileName, p_que, p_log, p_threadName, p_useMag, -1 );
+	}
+	
+	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que, Log p_log, String p_threadName ) {
+		this( p_fileName, p_que, p_log, p_threadName, Common.DEFAULT_USE_MAGNETOMETER );
+	}
+	
+	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que, Log p_log ) {
+		this( p_fileName, p_que, p_log, null );
+	}
+	
 	public HubWriter( String p_fileName, ConcurrentLinkedQueue<byte[]> p_que ) {
 		this( p_fileName, p_que, null );
-		
 	}
 	
 	/**
 	 * Public Methods
 	 */
 	public void notifyReaderDeath() {
-		thereIsAReader = false;
+		thereIsStillAReader = false;
 	}
 
 	/**
@@ -90,19 +109,20 @@ public class HubWriter extends Thread {
 	@Override
     public void run() {
 		
-		boolean	leggi		= true;
-		int		numSleeps	= 0;
-		int		numFrames	= 0;
+		boolean	readAgain			= true;
+		int		numNonStopSleeps	= 0;
+		int		numFrames			= 0;
 		byte[]	frame;
     	long	now;
     	long	startCicle, lenghtCicle, maxCicle = 0, minCicle = Long.MAX_VALUE, sumCicle = 0;
+    	int[]	nValidFrames = new int[Common.MAX_SENSORS];	// valid frames for each satellite
 		
-		if (log != null) log.write( Log.INFORMATION, "Writer Thread: starting ..." );
+		if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": starting ..." );
 
-		now = System.nanoTime();
-		startCicle = now;
+		// main cycle popping frames from the queue and write them to the dump file
+		startCicle = System.nanoTime();
 
-		while (leggi) {
+		while (readAgain) {
 			
         	// try to read next element from the queue
 			frame = queue.poll();
@@ -114,78 +134,80 @@ public class HubWriter extends Thread {
 				// if there isn't any reader feeding the queue, then if this is empty It will be like this forever
 				// otherwise wait a bit for someone filling the queue
 				// exits also if we waited for too long
-				if ( ! thereIsAReader | numSleeps >= MAX_NUM_SLEEPS ) {
-					if (log != null) log.write( Log.INFORMATION, "Writer Thread: There is not a reader and slept " + numSleeps + " times" );
+				if ( ! thereIsStillAReader ) {
+					if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": There is not a reader and slept " + numNonStopSleeps + " times" );
+					break;
+				}
+				if ( numNonStopSleeps >= Common.WRITER_MAX_NUM_SLEEPS ) {
+					if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": Slept too much - " + numNonStopSleeps + " times" );
 					break;
 				}
 				try {
-					numSleeps++;
-					if (log != null) log.write( Log.INFORMATION, "Writer Thread: The queue is empty - " + numSleeps );
-					Thread.sleep( SLEEP_A_BIT );
+					numNonStopSleeps++;
+					if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": The queue is empty, I am going to sleep - " + numNonStopSleeps );
+					Thread.sleep( Common.WRITER_SLEEP_FOR_EMPTY_QUEUE_MS );
 				} catch (InterruptedException e) {
-					continue;
-				}
+					if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": Someone else has interrupted my sleep" );
+				} 
+
+				startCicle = System.nanoTime();
+				continue;
 				
-			} else {
+			} 
+			
+        	if (log != null) log.writeln( Log.DEBUG, "Writer Thread " + getName() + ":  frame - " + Arrays.toString(frame) );
+			
+			// reset counts
+			numNonStopSleeps = 0;
+			numFrames++;
 				
-				ByteBuffer buf = ByteBuffer.wrap(frame);
+			// the frame is correct ... 
+			// translate it into ints/shorts/ floats and write them to the dump file
+			SensorData sensorDataFrame = new SensorData( frame, useMag, log );
 
-				// Hub speaks LITTLE_ENDIAN "language"
-				buf.order( ByteOrder.LITTLE_ENDIAN );
+			// dump the frame
+        	dumpFile.println( sensorDataFrame.toString() );
+        	
+        	// count valid frames per satellite
+        	if (numActiveSatellites > 0) {
+            	for (int i = 0; i<numActiveSatellites; i++) {
+            		if (sensorDataFrame.isSatelliteValid(i)) nValidFrames[i]++;
+            	}
+            	if ((numFrames % Common.WRITER_INTERVAL_PRINT_VALID_FRAMES) == 0) {
+                	for (int i = 0; i<numActiveSatellites; i++) {
+                		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %8d %5.1f%%", numFrames, (nValidFrames[i]*100F/numFrames)), Log.ECHO); 
+//                		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %d", nValidFrames[i]), Log.ECHO); 
+                	}
+            		if (log != null) log.write(Log.NONE, "\r", Log.ECHO); 
+            	}
+        	}
+        	
+        	// if cycle is very fast, think about introducing a sleep to allow reader process to gain higher priority
+        	try {
+				Thread.sleep( Common.WRITER_SLEEP_EVERY_CYCLE_MS );
+			} catch (InterruptedException e) {
+				if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": Someone else has interrupted my sleep" );
+			} 
 
-				// reset counts
-				numSleeps = 0;
-				numFrames++;
-				
-	        	if (log != null) log.write( Log.INFORMATION, "Writer Thread:  " + Arrays.toString(frame) );
+        	// performance calc
+        	now = System.nanoTime();
+        	//
+        	lenghtCicle = now - startCicle;
+        	sumCicle += lenghtCicle;
+        	if (lenghtCicle > maxCicle) maxCicle = lenghtCicle;
+        	if (lenghtCicle < minCicle) minCicle = lenghtCicle;
+        	startCicle = now;
 
-	        	// translate the frame from byte
-				//dumpFile.println(Arrays.toString(frame));
-				dumpFile.print( buf.getInt() + " ");
-				dumpFile.print( buf.get() + " ");
-				dumpFile.print( buf.getInt() + " ");
-				dumpFile.print( buf.getInt() + " ");
-				dumpFile.print( buf.getInt() + " ");
-
-				for (int i = 0; i < 10; i++ ) {
-					dumpFile.print( buf.getInt() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getShort() + " ");
-					dumpFile.print( buf.getFloat() + " ");
-					dumpFile.print( buf.getFloat() + " ");
-					dumpFile.print( buf.getFloat() + " ");
-					dumpFile.print( buf.getFloat() + " ");
-				}
-				
-				dumpFile.println();
-
-	        	// performance calc
-	        	now = System.nanoTime();
-	        	//
-	        	lenghtCicle = now - startCicle;
-	        	sumCicle += lenghtCicle;
-	        	if (lenghtCicle > maxCicle) maxCicle = lenghtCicle;
-	        	if (lenghtCicle < minCicle) minCicle = lenghtCicle;
-	        	startCicle = now;
-
-	        	if (log != null) log.write( Log.INFORMATION, "Writer Thread: frame " + numFrames + " - bytes written: " + 
-	        			frame.length + " in " + Math.round(lenghtCicle/1000F) + "us" );
-
-			}
+        	if (log != null) log.writeln( Log.DEBUG, "Writer Thread " + getName() + ": frame " + numFrames + " - bytes written: " + 
+        			frame.length + " in " + Math.round(lenghtCicle/1000F) + "us" );
 			
 		}
 		
-		if (log != null) log.write( Log.INFORMATION, "Writer Thread: closing ..." );
+		if (log != null) log.writeln( Log.WARNING, "Writer Thread " + getName() + ": closing ..." );
 		if (numFrames > 0) {
-        	if (log != null) log.write( Log.INFORMATION, "Writer Thread: Read " + numFrames + " frames" );
-			if (log != null) log.write( Log.INFORMATION, "Writer Thread: CICLE length - max " + Math.round(maxCicle/1000F) + "us " +
+        	if (log != null) log.writeln( Log.INFORMATION, "Writer Thread " + getName() + ": Read Total " + numFrames + " frames" );
+			if (log != null) log.writeln( Log.INFORMATION, "Writer Thread " + getName() + ": CICLE length " + 
+					"- max " + Math.round(maxCicle/1000F) + "us " +
 					"- min " + Math.round(minCicle/1000F) + "us " +
 					"- avg " + Math.round(sumCicle / numFrames /1000F) + "us" );
 		}
@@ -194,4 +216,5 @@ public class HubWriter extends Thread {
 		dumpFile.close();
 		
 	}
+	
 }

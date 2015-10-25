@@ -17,10 +17,12 @@ public class Log {
 	public static final int	INFORMATION		= 3;
 	public static final int	DEBUG			= 4;
 	public static final int	ALL				= DEBUG;
-	public static final int	DEFAULT_LEVEL	= WARNING;
-	
+	//public static final int	DEFAULT_LEVEL	= WARNING;
+
+	public static final boolean	ECHO		= true;
+
 	// private variables
-	private int				logLevel		= DEFAULT_LEVEL;
+	private int				logLevel		= Common.DEFAULT_LOG_LEVEL;
 	private PrintStream		log				= null;
 
 	/**
@@ -30,17 +32,19 @@ public class Log {
 	public Log( int p_logLevel, String p_fileName ) {
 
 		// log level
-		logLevel = p_logLevel;
-		if (logLevel != NONE &
-				logLevel != ERROR &
-				logLevel != WARNING &
-				logLevel != INFORMATION) {
-			logLevel = DEFAULT_LEVEL;
+		if (p_logLevel != NONE &
+				p_logLevel != ERROR &
+				p_logLevel != WARNING &
+				p_logLevel != INFORMATION &
+				p_logLevel != DEBUG) {
+			logLevel = Common.DEFAULT_LOG_LEVEL;
+		} else {
+			logLevel = p_logLevel;
 		}
 				
 		
 		// if is requested a log but is not supplied a file name then -> write to stdout!!!
-		if ( logLevel > NONE & p_fileName == "" ) {
+		if ( (logLevel > NONE) & p_fileName.equals("") ) {
 
 			log = System.out;
 			//System.err.println("LOG_LEVEL > 0 but no LOG_FILE specified");
@@ -53,7 +57,7 @@ public class Log {
 				log = new PrintStream( new FileOutputStream( p_fileName, true /* append */ ));
 
 			} catch (FileNotFoundException e) {
-				System.err.println("Error in opening propertis file: file not found!");
+				System.err.println("===== ERROR: Error in opening propertis file: file not found!");
 				logLevel = NONE;
 			} 
 			
@@ -70,23 +74,38 @@ public class Log {
 	}
 	
 	/**
-	 * Write into log file 
+	 * Write into log file
 	 */
 	public void write( int p_level, String p_text, boolean p_echo ) {
 		if ( p_level <= logLevel ) {
-			log.println( p_text );
+			log.print( p_text );
 			if (p_echo) { 
-				System.out.println( p_text );
+				System.out.print( p_text );
 			}
 		}
 	}
 	
 	public void write( int p_level, String p_text ) {
-		this.write( p_level, p_text, false );
+		this.write( p_level, p_text, !ECHO );
 	}
 	
 	public void write( String p_text ) {
-		this.write( NONE, p_text, false );
+		this.write( NONE, p_text );
+	}
+	
+	/**
+	 * Write into log file with new line
+	 */
+	public void writeln( int p_level, String p_text, boolean p_echo ) {
+		this.write( p_level, p_text + "\n", p_echo );
+	}
+	
+	public void writeln( int p_level, String p_text ) {
+		this.writeln( p_level, p_text, !ECHO );
+	}
+	
+	public void writeln( String p_text ) {
+		this.writeln( NONE, p_text );
 	}
 	
 	/**
@@ -100,6 +119,10 @@ public class Log {
 		}
 	}
 
+	public int getLogLevel() {
+		return logLevel;
+	}
+	
 	/*
 	 * Static methods
 	 */

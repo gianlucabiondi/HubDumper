@@ -12,13 +12,6 @@ import java.util.Arrays;
  */
 public class HubCommandData {
 	
-	// Max number of sensors supported
-	public static final int	MAX_SENSORS			= 11;
-	public static final int	MAX_SAT_SENSORS		= ( MAX_SENSORS - 1 );
-	
-	// Size in bytes of this "structure"
-	public static final int BYTES_SENT_TO_HUB	= 52;
-	
 	// hub commands
 	public static final int WIFI_VOID			= (0);
 	public static final int WIFI_INVALID		= (1 << 0);
@@ -41,34 +34,38 @@ public class HubCommandData {
 	private int				num_of_sat;
 	private int[]			satellite_ids;
 	
+	// Size in bytes of this "structure" sent to the hub
+	public static final int BYTES_SENT_TO_HUB	= 
+			Integer.BYTES + 						// command
+			Integer.BYTES + 						// rtc_value
+			Integer.BYTES + 						// num_of_sat
+			Integer.BYTES * Common.MAX_SAT_SENSORS;	// satellite_ids[ MAX_SAT_SENSORS ]
+	
 //	private int				
 	/*
-	 * Contructors
+	 * Constructors
 	 * Since I don't know if sat. number and sat. list need to be repeated for each command
 	 * I provide constructor also for command without sat. number and sat. list.
 	 */
-	public HubCommandData( OutputStream p_outStream, int p_command ) {
-		outStream	= p_outStream;
-		command		= p_command;
-		rtc_value	= 0;
-		satellite_ids = new int[MAX_SAT_SENSORS];
+	public HubCommandData( OutputStream p_outStream, int p_command, String[] p_satellites, Log p_log ) {
+
+		outStream		= p_outStream;
+		command			= p_command;
+		rtc_value		= 0;
+		
+		num_of_sat = p_satellites.length;
+		satellite_ids = new int[Common.MAX_SAT_SENSORS];
+		for (byte i=0; i < p_satellites.length; i++ ) {
+			satellite_ids[i] = Integer.parseInt(p_satellites[i]);
+		}
+
+		log = p_log;
 	}
 	
 	public HubCommandData( OutputStream p_outStream, int p_command, String[] p_satellites ) {
 		
-		this( p_outStream, p_command );
+		this( p_outStream, p_command, p_satellites, null );
 
-		num_of_sat = p_satellites.length;
-		for (byte i=0; i < p_satellites.length; i++ ) {
-			satellite_ids[i] = Integer.parseInt(p_satellites[i]);
-		}
-	}
-	
-	public HubCommandData( OutputStream p_outStream, int p_command, String[] p_satellites, Log p_log ) {
-		
-		this( p_outStream, p_command, p_satellites );
-		
-		log = p_log;
 	}
 	
 	/*
@@ -89,31 +86,35 @@ public class HubCommandData {
 	public boolean send() {
 
 		if (log != null) {
-			log.write(Log.INFORMATION, "	sending command: " + command + " - " + Log.int32ToBin( command ));
-			log.write(Log.INFORMATION, "	            rtc: " + Integer.toHexString( rtc_value ));
-			log.write(Log.INFORMATION, "	     num_of_sat: " + Integer.toString( num_of_sat ));
-			log.write(Log.INFORMATION, "	     satellites: " + Arrays.toString( satellite_ids ));
+			log.writeln(Log.INFORMATION, "	----" );
+			log.writeln(Log.INFORMATION, "	sending command: " + command + " - " + Log.int32ToBin( command ));
+			log.writeln(Log.INFORMATION, "	            rtc: " + Integer.toHexString( rtc_value ));
+			log.writeln(Log.INFORMATION, "	     num_of_sat: " + Integer.toString( num_of_sat ));
+			log.writeln(Log.INFORMATION, "	     satellites: " + Arrays.toString( satellite_ids ));
+			log.writeln(Log.INFORMATION, "	----" );
 		}
 
+		// prepare the "string" commend to send
+		ByteBuffer	buf	= ByteBuffer.allocate(BYTES_SENT_TO_HUB);
+		
+		// Hub speaks LITTLE_ENDIAN "language"
+		buf.order( ByteOrder.LITTLE_ENDIAN );
+		
+		buf.putInt(command);
+		buf.putInt(rtc_value);
+		buf.putInt(num_of_sat);
+		for (int i = 0; i<num_of_sat; i++) {
+			buf.putInt(satellite_ids[i]);
+		}
+		if (log != null) log.writeln(Log.DEBUG, Arrays.toString( buf.array() ));
+
+		// send command to the hub via socket stream
 		try {
 
-			ByteBuffer	buf	= ByteBuffer.allocate(BYTES_SENT_TO_HUB);
-			
-			// Hub speaks LITTLE_ENDIAN "language"
-			buf.order( ByteOrder.LITTLE_ENDIAN );
-			
-			buf.putInt(command);
-			buf.putInt(rtc_value);
-			buf.putInt(num_of_sat);
-			for (int i = 0; i<num_of_sat; i++) {
-				buf.putInt(satellite_ids[i]);
-			}
-			
-			log.write(Log.INFORMATION, Arrays.toString( buf.array() ));
 			outStream.write( buf.array() );
-			//outStream.flush();
+
 		} catch (IOException e) {
-			log.write(Log.ERROR, "Error in sending commands to the hub" );
+			log.writeln(Log.ERROR, "===== ERROR: Error in sending commands to the hub" );
 			e.printStackTrace();
 		}
 		
@@ -123,7 +124,7 @@ public class HubCommandData {
 	/*
 	 * Methods for setting correct command
 	 */
-	public boolean wifiIsACTIVE ( int p_cmd )		{ return ( (p_cmd & WIFI_NOT_SEND) != 0 ); }
+/*	public boolean wifiIsACTIVE ( int p_cmd )		{ return ( (p_cmd & WIFI_NOT_SEND) != 0 ); }
 	public int wifiCmdSetACTIVE ( int p_cmd )		{ return (p_cmd | WIFI_ACTIVE); }
 	public int wifiCmdClearACTIVE ( int p_cmd )		{ return (p_cmd & ~WIFI_ACTIVE); }
 
@@ -138,5 +139,6 @@ public class HubCommandData {
 	public boolean wifiIsSetSAT ( int p_cmd )		{ return ( (p_cmd & WIFI_SET_SATELLITES) != 0 ); }
 	public int wifiCmdSetSAT ( int p_cmd )			{ return (p_cmd | WIFI_SET_SATELLITES); }
 	public int wifiCmdClearSAT ( int p_cmd )		{ return (p_cmd & ~WIFI_SET_SATELLITES); }
-
+*/
+	
 }

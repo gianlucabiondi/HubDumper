@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
 <properties>
-	<entry key="HUB_IP">192.168.0.117</entry>
+	<entry key="HUB_IP">192.168.0.118</entry>
 	<entry key="HUB_PORT">1234</entry>
 	<entry key="LOG_LEVEL">3</entry>
 	<entry key="LOG_FILE">C:\Users\gianluca\workspace\HubDumper\log\execution.log</entry>
-	<entry key="SATELLITES_LIST">21</entry>
-	<entry key="MAGNETOMETER">YES</entry>
+	<entry key="SATELLITES_LIST">8, 10, 11, 23</entry>
+	<entry key="MAGNETOMETER">NO</entry>
 	<entry key="DUMP_FILE">C:\Users\gianluca\workspace\HubDumper\log\log-%t.log</entry>
 </properties>
