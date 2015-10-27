@@ -93,7 +93,27 @@ public class HubControl {
 	
 	public boolean close () {
 
-       	log.writeln( Log.NONE, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
+//		// wait for still active threads
+//		if (readerThread != null) 
+//			if (readerThread.isAlive())
+//				try {
+//					readerThread.join(10);
+//				} catch (InterruptedException e) {
+//		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Reader Thread to die but it dosn't want to");
+//				}
+//
+//		// wait for still active threads
+//		for (int i = 0; i < writerThread.size(); i++) {
+//			if (writerThread.get(i).isAlive())
+//				try {
+//					writerThread.get(i).join(10);
+//				} catch (InterruptedException e) {
+//		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Reader Thread to die but it dosn't want to");
+//				}
+//		}
+		
+		// close log file
+		log.writeln( Log.NONE, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
 		log.close();
 
 		return true;

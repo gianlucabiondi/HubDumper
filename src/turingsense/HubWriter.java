@@ -174,9 +174,9 @@ public class HubWriter extends Thread {
             		if (sensorDataFrame.isSatelliteValid(i)) nValidFrames[i]++;
             	}
             	if ((numFrames % Common.WRITER_INTERVAL_PRINT_VALID_FRAMES) == 0) {
+            		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %8d", numFrames ), Log.ECHO); 
                 	for (int i = 0; i<numActiveSatellites; i++) {
-                		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %8d %5.1f%%", numFrames, (nValidFrames[i]*100F/numFrames)), Log.ECHO); 
-//                		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %d", nValidFrames[i]), Log.ECHO); 
+                		if (log != null) log.write(Log.NONE, String.format((Locale)null, " %5.1f%%", (nValidFrames[i]*100F/numFrames)), Log.ECHO); 
                 	}
             		if (log != null) log.write(Log.NONE, "\r", Log.ECHO); 
             	}
