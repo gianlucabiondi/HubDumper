@@ -123,6 +123,10 @@ public class Log {
 		return logLevel;
 	}
 	
+	public PrintStream getOutputStream() {
+		return log;
+	}
+	
 	/*
 	 * Static methods
 	 */

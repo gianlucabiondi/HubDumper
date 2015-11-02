@@ -108,8 +108,11 @@ public class HubReader extends Thread {
 					break;
 				}
 			} catch (IOException e) {
-				//e.printStackTrace();
-				if (log != null) log.writeln( Log.ERROR, "Reader Thread " + getName() + ": IO Exception!" );
+				e.printStackTrace();
+				if (log != null) {
+					log.writeln( Log.ERROR, "Reader Thread " + getName() + ": IO Exception!" );
+					e.printStackTrace( log.getOutputStream() );
+				}
 			}
        	
         	if (log != null) log.writeln( Log.DEBUG, "Reader Thread " + getName() + ":  " + Arrays.toString(bFrame) );

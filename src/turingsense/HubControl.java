@@ -17,6 +17,7 @@
 package turingsense;
 
 import java.io.DataInputStream;
+import java.io.File;
 import java.io.OutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -26,8 +27,18 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 public class HubControl {
 
@@ -50,18 +61,7 @@ public class HubControl {
 	 */
 	private Log						log				= null; // application log
 	private boolean					useMagnetometer = Common.DEFAULT_USE_MAGNETOMETER;
-	// states matrix: rows -> current state; column -> next state
-	private int						currentState	= 0;
-	private boolean[][]				stateMatrix		= {
-			/* initial state */			{false,	true,	false,	false,	false,	false,	false,	true},
-			/* 1 - connect */			{false,	false,	true,	false,	false,	false,	true,	false},
-			/* 2 - Init Sensors */		{false,	false,	false,	true,	false,	true,	true,	false},
-			/* 3 - Start Dumping */		{false,	false,	false,	false,	true,	true,	false,	false},
-			/* 4 - Change Dump File */	{false,	false,	false,	false,	true,	true,	false,	false},
-			/* 5 - Stop Dumping */		{false,	false,	false,	true,	false,	false,	true,	false},
-			/* 6 - Disconnect */		{false,	true,	false,	false,	false,	false,	false,	true},
-			/* q - Quit */				{false,	false,	false,	false,	false,	false,	false,	false}
-	};
+	private HubcontrolState			currentState	= new HubcontrolState();
 	
 	/*
 	 * Constructor:
@@ -77,40 +77,49 @@ public class HubControl {
 	 */
 	public boolean init ( String p_propFile) {
 		
-		prop = new MyProperties( p_propFile );
+//		prop = new MyProperties( p_propFile );
+		prop = new MyProperties( );
+		prop.openAlePropertyFile(p_propFile);
 		
 		// open the application log file
 		log = new Log( prop.LOG_LEVEL, prop.LOG_FILE );
 		log.writeln( Log.NONE , "\n-----------------------------------------------------------" );
 		log.writeln( Log.NONE , "Start application " + (new Timestamp(System.currentTimeMillis())).toString() );
-		log.writeln( Log.INFORMATION, "Log Level -> " + log.getLogLevel() );
 				
 		// read main properties
-		useMagnetometer = (prop.MAGNETOMETER.equals("YES") ) ? true : false;
-				
+		useMagnetometer = (prop.MAGNETOMETER.toUpperCase().equals("YES") ) ? true : false;
+		
+		log.writeln(Log.INFORMATION, "DUMP_FILE: " + prop.DUMP_FILE);
+		log.writeln(Log.INFORMATION, "HUB_IP: " + prop.HUB_IP);
+		log.writeln(Log.INFORMATION, "HUB_PORT: " + prop.HUB_PORT);
+		log.writeln(Log.INFORMATION, "LOG_FILE: " + prop.LOG_FILE);
+		log.writeln(Log.INFORMATION, "LOG_LEVEL: " + prop.LOG_LEVEL);
+		log.writeln(Log.INFORMATION, "MAGNETOMETER: " + prop.MAGNETOMETER);
+		log.writeln(Log.INFORMATION, "SATELLITES_LIST_ARRAY: " + Arrays.toString(prop.SATELLITES_LIST_ARRAY));
+
 		return true;
 	}
 	
 	public boolean close () {
 
-//		// wait for still active threads
-//		if (readerThread != null) 
-//			if (readerThread.isAlive())
-//				try {
-//					readerThread.join(10);
-//				} catch (InterruptedException e) {
-//		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Reader Thread to die but it dosn't want to");
-//				}
-//
-//		// wait for still active threads
-//		for (int i = 0; i < writerThread.size(); i++) {
-//			if (writerThread.get(i).isAlive())
-//				try {
-//					writerThread.get(i).join(10);
-//				} catch (InterruptedException e) {
-//		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Reader Thread to die but it dosn't want to");
-//				}
-//		}
+		// wait for active threads to terinate
+		if (readerThread != null) 
+			if (readerThread.isAlive())
+				try {
+					readerThread.join(10);
+				} catch (InterruptedException e) {
+		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Reader Thread to die but it dosn't want to");
+				}
+
+		// wait for still active threads
+		for (int i = 0; i < writerThread.size(); i++) {
+			if (writerThread.get(i).isAlive())
+				try {
+					writerThread.get(i).join(10);
+				} catch (InterruptedException e) {
+		        	log.writeln(Log.ERROR, "===== ERROR: I waited for the Writer Thread " + i + " to die but it dosn't want to");
+				}
+		}
 		
 		// close log file
 		log.writeln( Log.NONE, "Close application " + (new Timestamp(System.currentTimeMillis())).toString() + "\n");
@@ -125,12 +134,10 @@ public class HubControl {
         int 	portNumber	= Integer.parseInt(prop.HUB_PORT);
 
         // check state matrix
-        int newState = 1;
-        if (!stateMatrix[currentState][newState]) {
-        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 1 - connect", Log.ECHO);
+        if (! currentState.changeState(1)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 1 - connect", Log.ECHO);
         	return false;
         }
-        currentState = newState;
         
         // if socket is already open then return immediately
         if (hubSocket != null) { 
@@ -167,12 +174,10 @@ public class HubControl {
 	public boolean disconnect () {
  
 		// check state matrix
-        int newState = 6;
-        if (!stateMatrix[currentState][newState]) {
-        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 6 - Disconnect", Log.ECHO);
+        if (! currentState.changeState(6)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 6 - Disconnect", Log.ECHO);
         	return false;
         }
-        currentState = newState;
         
 		try {
 			
@@ -193,13 +198,11 @@ public class HubControl {
 	public boolean initSensors ( boolean b_set_rtc, boolean b_set_satellites ) {
 		 
 		// check state matrix
-        int newState = 2;
-        if (!stateMatrix[currentState][newState]) {
-        	log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 2 - Init Sensors", Log.ECHO);
+        if (! currentState.changeState(2)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 2 - Init Sensors", Log.ECHO);
         	return false;
         }
-        currentState = newState;
-		
+	
 		// NOT_ACTIVE & SENDING
 		// (eventually SET_RTC & SET_SATELLITES)
 		HubCommandData	command = new HubCommandData (
@@ -219,12 +222,10 @@ public class HubControl {
 		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// queue where to put readed frames
 
 		// check state matrix
-		int newState = 3;
-		if (!stateMatrix[currentState][newState]) {
-			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 3 - Start Dumping", Log.ECHO);
-			return false;
-		}
-		currentState = newState;
+        if (! currentState.changeState(3)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 3 - Start Dumping", Log.ECHO);
+        	return false;
+        }
 
 		// prepare reading and writing thread
 		// reader
@@ -256,12 +257,10 @@ public class HubControl {
 	public boolean stopDumping () {
 
 		// check state matrix
-		int newState = 5;
-		if (!stateMatrix[currentState][newState]) {
-			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 5 - Stop Dumping", Log.ECHO);
-			return false;
-		}
-		currentState = newState;
+        if (! currentState.changeState(5)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 5 - Stop Dumping", Log.ECHO);
+        	return false;
+        }
 
 		// NOT ACTIVE & SENDING
 		HubCommandData	command = new HubCommandData (	
@@ -288,12 +287,10 @@ public class HubControl {
 	public boolean changeDumpFile () {
 
 		// check state matrix
-		int newState = 4;
-		if (!stateMatrix[currentState][newState]) {
-			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to 4 - Change Dump File", Log.ECHO);
-			return false;
-		}
-		currentState = newState;
+        if (! currentState.changeState(4)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to 4 - Change Dump File", Log.ECHO);
+        	return false;
+        }
 
 		// assign a new queue to the reader
 		ConcurrentLinkedQueue<byte[]> queue = new ConcurrentLinkedQueue<byte[]>();	// new queue
@@ -313,12 +310,10 @@ public class HubControl {
 	public boolean quit () {
 
 		// check state matrix
-		int newState = 7;
-		if (!stateMatrix[currentState][newState]) {
-			log.writeln(Log.WARNING, "Illegal command: from " + currentState + " to q - Quit", Log.ECHO);
-			return false;
-		}
-		currentState = newState;
+        if (! currentState.changeState(7)) {
+        	log.writeln(Log.WARNING, "Illegal command: from " + currentState.getCurrentState() + " to q - Quit", Log.ECHO);
+        	return false;
+        }
 
 		// close application
 		close();
@@ -347,6 +342,7 @@ public class HubControl {
 				"Enter : 1 - Connect\n" +
 				"      : 2 - Init Sensors (NO ACTIVE & SEND & declare sensors & init RTC)\n" +
 				"      : 3 - Start Dumping (ACTIVE & SEND)\n" +
+				"      : x - 2 + 3\n" +
 				"      : 4 - Change Dump File\n" +
 				"      : 5 - Stop Dumping (NO ACTIVE & SEND)\n" +
 				//"      : 6 - Deactivate Sensors (NO ACTIVE & SEND)\n" +
@@ -368,6 +364,10 @@ public class HubControl {
 			case '3': // Start Dumping (ACTIVE & SEND)
 				hubCtrl.startDumping();
 				break;
+			case 'x': // Init Sensors (declare sensors & init RTC) + Start Dumping (ACTIVE & SEND)
+				hubCtrl.initSensors(true, true);
+				hubCtrl.startDumping();
+				break;
 			case '4': // Change dump file
 				hubCtrl.changeDumpFile();
 				break;
@@ -381,11 +381,11 @@ public class HubControl {
 				hubCtrl.disconnect();
 				break;
 			case 'q': // quit
-				hubCtrl.quit();
 				break;
 			}
 			if (inputChar == 'q') break;
 		}
+		hubCtrl.quit();
 	}
 
 }
@@ -401,6 +401,9 @@ class MyProperties {
 	public String[]	SATELLITES_LIST_ARRAY;
 	public String 	DUMP_FILE;
 
+	public MyProperties( ) {		
+	}
+	
 	public MyProperties( String p_propFile ) {
 
 		String 	SATELLITES_LIST;
@@ -412,15 +415,17 @@ class MyProperties {
 			prop.loadFromXML(new FileInputStream(p_propFile));
 
 		} catch (FileNotFoundException e) {
+			e.printStackTrace();
 			System.err.println("Error in opening propertis file: file not found!");
             System.exit(1);
 		} catch (IOException e) {
+			e.printStackTrace();
 			System.err.println("Error in opening propertis file!");
             System.exit(1);
 		} 
 		
 		LOG_LEVEL = prop.getProperty("LOG_LEVEL");
-		if (LOG_LEVEL.equals( "NONE" ))		LOG_LEVEL = "0";
+		if (LOG_LEVEL.equals( "NONE" ))			LOG_LEVEL = "0";
 		if (LOG_LEVEL.equals( "ERROR" ))		LOG_LEVEL = "1";
 		if (LOG_LEVEL.equals( "WARNING" ))		LOG_LEVEL = "2";
 		if (LOG_LEVEL.equals( "INFORMATION" ))	LOG_LEVEL = "3";
@@ -438,4 +443,116 @@ class MyProperties {
 		DUMP_FILE = prop.getProperty("DUMP_FILE");
 	}
 
+	public boolean openAlePropertyFile ( String p_str ) {
+		
+	    String OUTFILENAME = null;
+	    String OUTPATH = null;
+
+	    //Get Document Builder
+		DocumentBuilder db = null;
+		try {
+			db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+		} catch (Exception e) {
+			e.printStackTrace();
+			System.err.println("Error in opening propertis file!");
+			return false;
+		}
+
+	   //Build Document
+	   Document document = null;
+		try {
+			document = db.parse(new File( p_str ));
+		} catch (SAXException | IOException e) {
+			e.printStackTrace();
+			System.err.println("Error in parsing propertis file!");
+			return false;
+		}
+	    
+	   //Normalize the XML Structure; It's just too important !!
+	   document.getDocumentElement().normalize();
+	    
+	   //Get all OPTIONS
+	   NodeList nList = document.getElementsByTagName("option");
+	    
+	   for (int temp = 0; temp < nList.getLength(); temp++)   {
+		    Node node = nList.item(temp);
+		    System.out.println("");    //Just a separator
+		    if (node.getNodeType() == Node.ELEMENT_NODE)    {
+		       Element eElement = (Element) node;
+		       String sNodeName = eElement.getAttribute("name");
+		       String sNodeValue = eElement.getElementsByTagName("value").item(0).getTextContent();
+
+		       //PROC_FOLDER
+		       //IDPROC
+		       if (sNodeName.equals("OUTPATH"))	{
+		    	   OUTPATH = sNodeValue;
+		    	   if ( !OUTPATH.endsWith("\\") & !OUTPATH.endsWith("//") ) OUTPATH.concat("//");
+		       }
+		       if (sNodeName.equals("OUTFILENAME"))	{
+		    	   OUTFILENAME = sNodeValue;
+		    	   while ( OUTFILENAME.startsWith("\\") | OUTFILENAME.startsWith("//") ) OUTFILENAME.substring(1);
+		       }
+		       if (sNodeName.equals("HUB_IP"))				HUB_IP = sNodeValue;
+		       if (sNodeName.equals("HUB_PORT"))			HUB_PORT = sNodeValue;
+		       if (sNodeName.equals("LOG_LEVEL")) {
+		    	   LOG_LEVEL = sNodeValue;
+		    	   if (LOG_LEVEL.equals( "NONE" ))			LOG_LEVEL = "0";
+		    	   if (LOG_LEVEL.equals( "ERROR" ))			LOG_LEVEL = "1";
+		    	   if (LOG_LEVEL.equals( "WARNING" ))		LOG_LEVEL = "2";
+		    	   if (LOG_LEVEL.equals( "INFORMATION" ))	LOG_LEVEL = "3";
+		    	   if (LOG_LEVEL.equals( "DEBUG" ))			LOG_LEVEL = "4";
+		    	   if ( !LOG_LEVEL.equals("0") & 
+		    			   !LOG_LEVEL.equals("1") & 
+		    			   !LOG_LEVEL.equals("2") & 
+		    			   !LOG_LEVEL.equals("3") & 
+		    			   !LOG_LEVEL.equals("4")  ) {
+		    	   	LOG_LEVEL = Integer.toString(Common.DEFAULT_LOG_LEVEL);
+		    	   }
+		       }
+		       if (sNodeName.equals("LOG_FILE")) 			LOG_FILE = sNodeValue;
+		       if (sNodeName.equals("SATELLITES_LIST"))		SATELLITES_LIST_ARRAY = sNodeValue.split("\\s*,\\s*");		
+		       if (sNodeName.equals("MAGNETOMETER"))		MAGNETOMETER = sNodeValue;
+
+		    }
+	   }
+	   
+	   DUMP_FILE = OUTPATH + OUTFILENAME;
+	   
+	   return true;
+		
+	}
+}
+
+class HubcontrolState {
+	// states matrix: rows -> current state; column -> next state
+	private boolean[][]				stateMatrix		= {
+			/* start         end -> 	start	1		2		3		4		5		6		q	*/	
+			/* initial state */			{false,	true,	false,	false,	false,	false,	false,	true},
+			/* 1 - connect */			{false,	false,	true,	false,	false,	false,	true,	false},
+			/* 2 - Init Sensors */		{false,	false,	false,	true,	false,	true,	true,	false},
+			/* 3 - Start Dumping */		{false,	false,	false,	false,	true,	true,	false,	false},
+			/* 4 - Change Dump File */	{false,	false,	false,	false,	true,	true,	false,	false},
+			/* 5 - Stop Dumping */		{false,	false,	false,	true,	false,	false,	true,	false},
+			/* 6 - Disconnect */		{false,	true,	false,	false,	false,	false,	false,	true},
+			/* q - Quit */				{false,	false,	false,	false,	false,	false,	false,	false}
+	};
+	private int						currentState	= 0; // initial state
+	
+	public boolean changeState ( int p_newState ) {
+        // check state matrix
+        if (!stateMatrix[currentState][p_newState]) {
+        	// new state is incorrect
+        	return false;
+        }
+        // new state : valid
+        currentState = p_newState;
+        
+        return true;
+	}
+	
+	public int getCurrentState () {
+		return currentState;
+	}
+
+	
 }

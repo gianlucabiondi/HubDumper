@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tsInput	id="20151009164412" 
+			outputFile="C:/Users/gianluca/workspace/HubDumper/log/execution.log">
+   <option name="PROC_FOLDER" >     <value>TESTLUCA</value>  </option>
+   <option name="IDPROC" >     		<value>20151009164412</value>  </option>
+   <option name="OUTPATH" >      	<value>C:/Users/gianluca/workspace/HubDumper/log/</value>  </option>   
+   <option name="OUTFILENAME" >     <value>user_201510191615448826$logdata_%t.txt</value>  </option>
+   <option name="HUB_IP" > 			<value>192.168.0.118</value> </option>
+   <option name="HUB_PORT" >		<value>1234</value> </option>
+   <option name="LOG_LEVEL" > 		<value>4</value> </option>
+   <option name="LOG_FILE" > 		<value>C:/Users/gianluca/workspace/HubDumper/log/execution.log</value> </option>
+   <option name="SATELLITES_LIST" >	<value>8,10,11,19,23,116</value> </option>
+   <option name="MAGNETOMETER" > 	<value>No</value> </option>
+   <!-- sostituito da OUTPATH + OUTFILENAME <option name="DUMP_FILE" > 		<value>C:/Users/gianluca/workspace/HubDumper/log/log-%t.log</value> </option> -->
+</tsInput>
+
+
+	<!--  questo é PARTE del ritorno del metodo di richiesta stato
+		  <option name="FRAMES_4_SATELLITE" satID="8" >    <value>1000</value> 	</option>
+		  <option name="FRAMES_4_SATELLITE" satID="10" >   <value>1000</value> 	</option>
+		  <option name="FRAMES_4_SATELLITE" satID="11" >   <value>1000</value> 	</option>
+		  <option name="FRAMES_4_SATELLITE" satID="19" >   <value>1000</value> 	</option>
+		  <option name="FRAMES_4_SATELLITE" satID="23" >   <value>1000</value> 	</option>
+		  <option name="FRAMES_4_SATELLITE" satID="116" >  <value>1000</value> 	</option>
+	   
+tsInput
+============================
+
+Option name : OUTPATH
+value : C:/Users/gianluca/workspace/HubDumper/log/
+
+Option name : OUTFILENAME
+value : user_201510191615448826$logdata_%t.txt
+
+Option name : HUB_IP
+value : 192.168.0.118
+
+Option name : HUB_PORT
+value : 1234
+
+Option name : LOG_LEVEL
+value : 4
+
+Option name : LOG_FILE
+value : C:/Users/gianluca/workspace/HubDumper/log/execution.log
+
+Option name : SATELLITES_LIST
+value : 8,10,11,19,23,116
+
+Option name : MAGNETOMETER
+value : No
+
+	-->
