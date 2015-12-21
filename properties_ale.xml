@@ -5,12 +5,12 @@
    <option name="IDPROC" >     		<value>20151009164412</value>  </option>
    <option name="OUTPATH" >      	<value>C:/Users/gianluca/workspace/HubDumper/log/</value>  </option>   
    <option name="OUTFILENAME" >     <value>user_201510191615448826$logdata_%t.txt</value>  </option>
-   <option name="HUB_IP" > 			<value>192.168.0.118</value> </option>
+   <option name="HUB_IP" > 			<value>192.168.1.110</value> </option>
    <option name="HUB_PORT" >		<value>1234</value> </option>
    <option name="LOG_LEVEL" > 		<value>4</value> </option>
    <option name="LOG_FILE" > 		<value>C:/Users/gianluca/workspace/HubDumper/log/execution.log</value> </option>
-   <option name="SATELLITES_LIST" >	<value>8,10,11,19,23,116</value> </option>
-   <option name="MAGNETOMETER" > 	<value>No</value> </option>
+   <option name="SATELLITES_LIST" >	<value>116</value> </option>
+   <option name="MAGNETOMETER" > 	<value>YES</value> </option>
    <!-- sostituito da OUTPATH + OUTFILENAME <option name="DUMP_FILE" > 		<value>C:/Users/gianluca/workspace/HubDumper/log/log-%t.log</value> </option> -->
 </tsInput>
 
